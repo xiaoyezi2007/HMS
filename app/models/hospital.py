@@ -83,3 +83,59 @@ class MedicalRecord(SQLModel, table=True):
 
     # 关联挂号单 (一对一)
     reg_id: int = Field(foreign_key="registration.reg_id", unique=True)
+
+
+# --- 9. 护士表 ---
+class Nurse(SQLModel, table=True):
+    nurse_id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=50)
+    gender: Gender
+    phone: str = Field(max_length=11, unique=True)
+    schedules: List["NurseSchedule"] = Relationship(back_populates="nurse")
+
+
+# --- 10. 病房表 ---
+class Ward(SQLModel, table=True):
+    ward_id: Optional[int] = Field(default=None, primary_key=True)
+    bed_count: int = Field(gt=0)
+    type: str = Field(max_length=50)
+    dept_id: int = Field(foreign_key="department.dept_id")
+    schedules: List["NurseSchedule"] = Relationship(back_populates="ward")
+
+
+# --- 11. 排班表 ---
+class NurseSchedule(SQLModel, table=True):
+    schedule_id: Optional[int] = Field(default=None, primary_key=True)
+    nurse_id: int = Field(foreign_key="nurse.nurse_id")
+    ward_id: int = Field(foreign_key="ward.ward_id")
+    time: datetime = Field(description="值班时间")
+
+    nurse: Optional[Nurse] = Relationship(back_populates="schedules")
+    ward: Optional[Ward] = Relationship(back_populates="schedules")
+
+# --- 12. 药品表 ---
+class Medicine(SQLModel, table=True):
+    medicine_id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=100, unique=True)
+    price: float = Field(default=0.0)
+    stock: int = Field(default=0)
+    unit: str = Field(max_length=10)
+    expire_date: date
+
+# --- 13. 处方表 ---
+class Prescription(SQLModel, table=True):
+    pres_id: Optional[int] = Field(default=None, primary_key=True)
+    record_id: int = Field(foreign_key="medicalrecord.record_id", unique=True)
+    create_time: datetime = Field(default_factory=datetime.now)
+    total_amount: float = Field(default=0.0)
+    status: str = Field(default="未缴费")
+    details: List["PrescriptionDetail"] = Relationship(back_populates="prescription")
+
+# --- 14. 处方明细 ---
+class PrescriptionDetail(SQLModel, table=True):
+    detail_id: Optional[int] = Field(default=None, primary_key=True)
+    pres_id: int = Field(foreign_key="prescription.pres_id")
+    medicine_id: int = Field(foreign_key="medicine.medicine_id")
+    quantity: int = Field(gt=0)
+    usage: str = Field(max_length=200)
+    prescription: Optional[Prescription] = Relationship(back_populates="details")
