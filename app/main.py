@@ -6,6 +6,9 @@ from app.api import auth, patient_service
 # 导入所有模型以确保建表
 from app.models.user import UserAccount
 from app.models.hospital import Department, Doctor, Gender
+from app.api import auth, patient_service, doctor_service # <--- 新增 doctor_service
+# 记得导入 MedicalRecord 确保建表
+from app.models.hospital import MedicalRecord
 
 
 # --- 辅助：插入测试数据 ---
@@ -44,6 +47,7 @@ app = FastAPI(title="医院管理系统 API", lifespan=lifespan)
 
 app.include_router(auth.router, prefix="/auth", tags=["认证模块"])
 app.include_router(patient_service.router, prefix="/api", tags=["患者服务"])
+app.include_router(doctor_service.router, prefix="/api/doctor", tags=["医生工作站"])
 
 
 @app.get("/")

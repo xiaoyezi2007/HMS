@@ -14,3 +14,9 @@ class PatientCreate(SQLModel):
 class RegistrationCreate(SQLModel):
     doctor_id: int
     reg_type: RegType = RegType.NORMAL
+
+# --- 医生写病历 ---
+class MedicalRecordCreate(SQLModel):
+    complaint: str
+    diagnosis: str
+    suggestion: str = None

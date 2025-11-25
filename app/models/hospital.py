@@ -69,3 +69,17 @@ class Registration(SQLModel, table=True):
     # 外键
     patient_id: int = Field(foreign_key="patient.patient_id")
     doctor_id: int = Field(foreign_key="doctor.doctor_id")
+
+
+# --- 5. 病历表 (MedicalRecord) ---
+class MedicalRecord(SQLModel, table=True):
+    record_id: Optional[int] = Field(default=None, primary_key=True)
+    create_time: datetime = Field(default_factory=datetime.now)
+
+    # 核心字段 (PDF 1.4.6)
+    complaint: str = Field(description="主诉")
+    diagnosis: str = Field(description="诊断结果")
+    suggestion: Optional[str] = Field(default=None, description="治疗建议")
+
+    # 关联挂号单 (一对一)
+    reg_id: int = Field(foreign_key="registration.reg_id", unique=True)
