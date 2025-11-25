@@ -1,0 +1,34 @@
+from sqlmodel import SQLModel, Field
+from datetime import datetime
+from typing import Optional
+from enum import Enum
+
+
+# 定义角色枚举 (对应 PDF 中的 Role 字段)
+class UserRole(str, Enum):
+    PATIENT = "患者"
+    DOCTOR = "医生"
+    NURSE = "护士"
+    PHARMACIST = "药师"
+    ADMIN = "管理员"
+
+
+# 定义数据库模型
+class UserAccount(SQLModel, table=True):
+    # 对应 PDF: Phone 手机号码 (主键)
+    phone: str = Field(primary_key=True, max_length=11, description="手机号码，作为登录账号")
+
+    # 对应 PDF: Username 用户名 (唯一，昵称)
+    username: str = Field(max_length=50, unique=True, nullable=False)
+
+    # 对应 PDF: PasswordHash (加密存储)
+    password_hash: str = Field(max_length=255, nullable=False)
+
+    # 对应 PDF: Role 用户角色
+    role: UserRole = Field(nullable=False)
+
+    # 对应 PDF: RegisterTime 注册时间
+    register_time: datetime = Field(default_factory=datetime.now)
+
+    # 对应 PDF: Status 账户状态 (启用/禁用)
+    status: str = Field(default="启用", max_length=10)
