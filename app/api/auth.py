@@ -6,7 +6,11 @@ from sqlmodel import select
 from app.core.config import get_session
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.models.user import UserAccount
-from app.schemas.user import UserCreate, Token
+from app.schemas.user import UserCreate, Token, UserAccountSafe
+from app.schemas.user import ChangePassword
+from app.api.deps import get_current_user
+from app.models.user import UserRole
+from fastapi import Depends
 
 router = APIRouter()
 
@@ -55,8 +59,40 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Async
             detail="手机号或密码错误",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    # B2. 验证账号状态
+    if user.status != "启用":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账号已被禁用，请联系管理员",
+        )
 
     # C. 生成 Token
     access_token = create_access_token(data={"sub": user.phone, "role": user.role.value})
 
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+
+# --- 获取当前用户信息 ---
+@router.get("/me", response_model=UserAccountSafe)
+async def get_me(current_user: UserAccount = Depends(get_current_user)):
+    return current_user
+
+
+# --- 修改密码 ---
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePassword,
+    current_user: UserAccount = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    # 验证当前密码
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="当前密码不正确")
+
+    # 更新密码
+    current_user.password_hash = get_password_hash(payload.new_password)
+    session.add(current_user)
+    await session.commit()
+    return {"detail": "密码已更新"}

@@ -1,0 +1,71 @@
+:root {
+  font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light;
+  color: #0f172a;
+  background-color: #f5f6fa;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #f5f6fa;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* Ensure Element Plus dialogs and overlays appear above app layout */
+.el-overlay {
+  z-index: 99990 !important;
+}
+.el-dialog__wrapper {
+  z-index: 99995 !important;
+}
+.custom-med-dialog .el-dialog {
+  z-index: 99996 !important;
+}
+
+/* Styles for custom modal fallback */
+.custom-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+.custom-modal {
+  width: 80%;
+  max-height: 80vh;
+  background: #fff;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  overflow: auto;
+}
+
+/* Improve spacing inside modal table so controls are not clipped */
+.custom-modal .el-table th,
+.custom-modal .el-table td {
+  padding: 10px 14px;
+  vertical-align: middle;
+}
+.custom-modal .el-input-number,
+.custom-modal .el-input {
+  min-width: 140px;
+}
+.custom-modal .el-input-number .el-input__inner {
+  padding-right: 8px;
+}
+.custom-modal .el-table__body-wrapper {
+  max-height: 56vh !important;
+}
+
+/* allow controls inside table cells to be visible */
+.custom-modal .el-table td {
+  overflow: visible;
+}

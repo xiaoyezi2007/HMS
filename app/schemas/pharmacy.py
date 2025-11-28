@@ -18,3 +18,8 @@ class PrescriptionRead(SQLModel):
     total_amount: float
     status: str
     create_time: datetime
+
+
+class MedicinePurchase(SQLModel):
+    medicine_id: int
+    quantity: int

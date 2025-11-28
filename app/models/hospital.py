@@ -2,6 +2,8 @@ from sqlmodel import SQLModel, Field, Relationship
 from datetime import date, datetime
 from typing import Optional, List
 from enum import Enum
+import random
+from datetime import datetime as _datetime
 
 
 # --- 枚举类型 ---
@@ -11,8 +13,9 @@ class Gender(str, Enum):
 
 
 class RegStatus(str, Enum):
-    WAITING = "待就诊"
-    COMPLETED = "已就诊"
+    WAITING = "排队中"
+    IN_PROGRESS = "就诊中"
+    FINISHED = "已完成"
     CANCELLED = "已取消"
 
 
@@ -83,6 +86,8 @@ class MedicalRecord(SQLModel, table=True):
 
     # 关联挂号单 (一对一)
     reg_id: int = Field(foreign_key="registration.reg_id", unique=True)
+    # 关系：一个病历可以有多个检查记录
+    exams: List["Examination"] = Relationship(back_populates="record")
 
 
 # --- 9. 护士表 ---
@@ -91,6 +96,7 @@ class Nurse(SQLModel, table=True):
     name: str = Field(max_length=50)
     gender: Gender
     phone: str = Field(max_length=11, unique=True)
+    is_head_nurse: bool = Field(default=False, description="是否为护士长")
     schedules: List["NurseSchedule"] = Relationship(back_populates="nurse")
 
 
@@ -139,3 +145,60 @@ class PrescriptionDetail(SQLModel, table=True):
     quantity: int = Field(gt=0)
     usage: str = Field(max_length=200)
     prescription: Optional[Prescription] = Relationship(back_populates="details")
+
+
+# --- 15. 检查表 (Examination) ---
+class ExamResult(str, Enum):
+    VERY_LOW = "极低"
+    LOW = "偏低"
+    NORMAL = "正常"
+    HIGH = "偏高"
+    VERY_HIGH = "极高"
+
+
+class Examination(SQLModel, table=True):
+    exam_id: Optional[int] = Field(default=None, primary_key=True)
+    type: str = Field(max_length=100, description="检查类型，由医生填写")
+    result: str = Field(default=None, max_length=10, description="检查结果：极低/偏低/正常/偏高/极高")
+    date: _datetime = Field(default_factory=_datetime.now)
+
+    # 外键：关联病历（n:1）
+    record_id: int = Field(foreign_key="medicalrecord.record_id")
+    record: Optional[MedicalRecord] = Relationship(back_populates="exams")
+
+
+# --- 16. 缴费表 (Payment) ---
+class PaymentType(str, Enum):
+    PRESCRIPTION = "处方费"
+    EXAM = "检查费"
+    HOSPITAL = "住院费"
+    REGISTRATION = "挂号费"
+
+
+class Payment(SQLModel, table=True):
+    payment_id: Optional[int] = Field(default=None, primary_key=True)
+    type: PaymentType
+    amount: float = Field(default=0.0, ge=0)
+    status: str = Field(default="未缴费")
+    time: _datetime = Field(default_factory=_datetime.now)
+
+    # 关联外键（可选）
+    patient_id: int = Field(foreign_key="patient.patient_id")
+    pres_id: Optional[int] = Field(default=None, foreign_key="prescription.pres_id")
+    exam_id: Optional[int] = Field(default=None, foreign_key="examination.exam_id")
+    hosp_id: Optional[int] = Field(default=None, foreign_key="hospitalization.hosp_id")
+
+
+# --- 16b. 住院表 (Hospitalization) ---
+class Hospitalization(SQLModel, table=True):
+    hosp_id: Optional[int] = Field(default=None, primary_key=True)
+    status: str = Field(default="在院")
+    in_date: datetime = Field(default_factory=datetime.now)
+    out_date: Optional[datetime] = Field(default=None)
+
+    hosp_doctor_id: Optional[int] = Field(default=None, foreign_key="doctor.doctor_id")
+    ward_id: Optional[int] = Field(default=None, foreign_key="ward.ward_id")
+    record_id: Optional[int] = Field(default=None, foreign_key="medicalrecord.record_id")
+
+    # 关系（可选）
+    # record: Optional[MedicalRecord] = Relationship()
