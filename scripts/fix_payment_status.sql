@@ -1,1 +1,0 @@
-ALTER TABLE payment ADD COLUMN status VARCHAR(255) DEFAULT '未缴费';
