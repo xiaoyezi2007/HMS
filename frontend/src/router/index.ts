@@ -8,6 +8,7 @@ import DoctorDashboard from "../views/dashboard/DoctorDashboard.vue";
 import NurseDashboard from "../views/dashboard/NurseDashboard.vue";
 import PharmacyDashboard from "../views/dashboard/PharmacyDashboard.vue";
 import AdminDashboard from "../views/dashboard/AdminDashboard.vue";
+import AdminRevenue from "../views/dashboard/AdminRevenue.vue";
 import StaffProfile from "../views/staff/StaffProfile.vue";
 import PatientHome from "../views/patient/PatientHome.vue";
 import PatientProfile from "../views/patient/PatientProfile.vue";
@@ -116,6 +117,12 @@ const router = createRouter({
           meta: { roles: ["护士"] }
         },
         {
+          path: "workspace/nurse/schedule-management",
+          name: "nurse-schedule-management",
+          component: () => import("../views/dashboard/HeadNurseSchedule.vue"),
+          meta: { roles: ["护士"], headOnly: true }
+        },
+        {
           path: "workspace/nurse/profile",
           name: "nurse-profile",
           component: StaffProfile,
@@ -140,6 +147,12 @@ const router = createRouter({
           meta: { roles: ["管理员"] }
         }
         ,
+        {
+          path: "workspace/admin/revenue",
+          name: "admin-revenue",
+          component: AdminRevenue,
+          meta: { roles: ["管理员"] }
+        },
         {
           path: "workspace/admin/profile",
           name: "admin-profile",
@@ -168,6 +181,11 @@ router.beforeEach((to: RouteLocationNormalized, _from: RouteLocationNormalized, 
       next(fallback);
       return;
     }
+  }
+
+  if (to.meta.headOnly && auth.currentRole === "护士" && !auth.isHeadNurse) {
+    next("/workspace/nurse");
+    return;
   }
 
   if (to.path === "/login" && auth.isAuthenticated) {

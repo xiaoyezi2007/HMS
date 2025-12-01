@@ -124,6 +124,16 @@ export interface PaymentItem {
       usage: string;
     }>;
   } | null;
+  hospitalization_info?: {
+    hosp_id: number;
+    ward_id?: number | null;
+    ward_type?: string | null;
+    status: string;
+    in_date: string;
+    out_date?: string | null;
+    duration_hours: number;
+    duration_days: number;
+  } | null;
 }
 
 export function fetchMyPayments() {

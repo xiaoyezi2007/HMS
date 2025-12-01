@@ -39,6 +39,32 @@ export interface NurseProfile {
   is_head_nurse: boolean;
 }
 
+export interface RevenueTypeStat {
+  type: string;
+  amount: number;
+  count: number;
+}
+
+export interface RevenueRecord {
+  payment_id: number;
+  type: string;
+  amount: number;
+  time: string;
+  patient_id: number;
+  patient_name?: string;
+  patient_phone?: string;
+  pres_id?: number | null;
+  exam_id?: number | null;
+  hosp_id?: number | null;
+}
+
+export interface RevenueSummary {
+  total_amount: number;
+  paid_count: number;
+  by_type: RevenueTypeStat[];
+  records: RevenueRecord[];
+}
+
 export function fetchStaffAccounts(role?: string) {
   if (role) {
     return http.get<StaffAccount[]>("/api/admin/accounts", { params: { role } });
@@ -72,4 +98,8 @@ export function fetchNurses() {
 
 export function updateNurseHeadStatus(nurseId: number, isHead: boolean) {
   return http.patch(`/api/admin/nurses/${nurseId}/head`, { is_head_nurse: isHead });
+}
+
+export function fetchRevenueSummary() {
+  return http.get<RevenueSummary>('/api/admin/revenue');
 }

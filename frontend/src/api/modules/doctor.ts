@@ -16,6 +16,15 @@ export interface MedicalRecordPayload {
   suggestion?: string;
 }
 
+export interface WardInfo {
+  ward_id: number;
+  type: string;
+  bed_count: number;
+  occupied: number;
+  available: number;
+  is_full: boolean;
+}
+
 export function fetchDoctorSchedule() {
   return http.get<RegistrationItem[]>("/api/doctor/schedule");
 }
@@ -46,4 +55,16 @@ export function createExamination(regId: number, payload: { type: string }) {
 
 export function fetchExaminations(regId: number) {
   return http.get(`/api/doctor/consultations/${regId}/exams`);
+}
+
+export function fetchDoctorWards() {
+  return http.get<WardInfo[]>("/api/doctor/wards");
+}
+
+export function hospitalizePatient(regId: number, payload: { ward_id: number }) {
+  return http.post(`/api/doctor/consultations/${regId}/hospitalize`, payload);
+}
+
+export function exportTransferForm(regId: number) {
+  return http.get(`/api/doctor/consultations/${regId}/transfer`, { responseType: "blob" });
 }

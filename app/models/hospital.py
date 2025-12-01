@@ -114,7 +114,8 @@ class NurseSchedule(SQLModel, table=True):
     schedule_id: Optional[int] = Field(default=None, primary_key=True)
     nurse_id: int = Field(foreign_key="nurse.nurse_id")
     ward_id: int = Field(foreign_key="ward.ward_id")
-    time: datetime = Field(description="值班时间")
+    start_time: datetime = Field(description="值班开始时间")
+    end_time: datetime = Field(description="值班结束时间")
 
     nurse: Optional[Nurse] = Relationship(back_populates="schedules")
     ward: Optional[Ward] = Relationship(back_populates="schedules")

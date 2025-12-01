@@ -37,6 +37,12 @@
                 </div>
                 <div v-else>处方内容未记录</div>
               </div>
+              <div v-else-if="row.hospitalization_info">
+                <strong>住院：</strong>{{ row.hospitalization_info.ward_type || '住院病房' }}
+                <div>入院：{{ formatDate(row.hospitalization_info.in_date) }}</div>
+                <div v-if="row.hospitalization_info.out_date">出院：{{ formatDate(row.hospitalization_info.out_date) }}</div>
+                <div>时长：{{ formatDuration(row.hospitalization_info.duration_hours) }}</div>
+              </div>
               <div v-else-if="row.type === '挂号费'">挂号费用</div>
             </template>
           </el-table-column>
@@ -77,6 +83,23 @@ async function doPay(row: any) {
     const msg = e?.response?.data?.detail || '缴费失败'
     ElMessage.error(msg)
   }
+}
+
+function formatDate(value?: string) {
+  if (!value) return '-'
+  try {
+    return new Date(value).toLocaleString()
+  } catch {
+    return value
+  }
+}
+
+function formatDuration(hours?: number) {
+  if (hours === undefined || hours === null) return '-'
+  if (hours < 24) {
+    return `${hours.toFixed(1)} 小时`
+  }
+  return `${(hours / 24).toFixed(1)} 天`
 }
 
 onMounted(() => {

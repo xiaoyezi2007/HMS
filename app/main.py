@@ -62,11 +62,7 @@ async def init_data():
                 w1 = Ward(bed_count=4, type="普通房", dept_id=d1.dept_id)
                 session.add(w1)
                 await session.flush()
-                n1 = Nurse(name="南丁格尔", gender=Gender.FEMALE, phone="123")
-                session.add(n1)
-                await session.flush()
-                session.add(NurseSchedule(nurse_id=n1.nurse_id, ward_id=w1.ward_id, time=datetime.now()))
-                await session.commit()
+                
 
 
 @asynccontextmanager

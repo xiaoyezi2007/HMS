@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -20,6 +21,8 @@ from app.models.hospital import (
     Examination,
     PrescriptionDetail,
     Medicine,
+    Hospitalization,
+    Ward,
 )
 from app.models.user import UserAccount, UserRole
 from app.schemas.hospital import PatientCreate, RegistrationCreate
@@ -361,6 +364,23 @@ async def get_my_payments(
                 "total_amount": pres.total_amount if pres else None,
                 "details": details
             }
+
+        if p.hosp_id:
+            hosp = await session.get(Hospitalization, p.hosp_id)
+            if hosp:
+                ward = await session.get(Ward, hosp.ward_id) if hosp.ward_id else None
+                reference_out = hosp.out_date or datetime.now()
+                duration_hours = max((reference_out - hosp.in_date).total_seconds() / 3600, 0.0)
+                entry["hospitalization_info"] = {
+                    "hosp_id": hosp.hosp_id,
+                    "ward_id": hosp.ward_id,
+                    "ward_type": ward.type if ward else None,
+                    "status": hosp.status,
+                    "in_date": hosp.in_date,
+                    "out_date": hosp.out_date,
+                    "duration_hours": duration_hours,
+                    "duration_days": round(duration_hours / 24, 2)
+                }
 
         out.append(entry)
     return out

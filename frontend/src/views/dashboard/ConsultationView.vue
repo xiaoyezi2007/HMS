@@ -1,4 +1,4 @@
-、<template>
+<template>
   <div class="consultation">
     <el-card>
       <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
@@ -13,6 +13,51 @@
         </div>
       </div>
     </el-card>
+
+    <el-dialog v-model="admitDialogVisible" title="办理住院" width="780px">
+      <div class="ward-card-header">
+        <div>
+          <h4>病房选择</h4>
+          <small>展示所属科室的病房、床位、占用情况</small>
+        </div>
+        <div class="ward-actions">
+          <el-button type="info" size="small" :loading="transferLoading" @click="onTransfer">导出转院单</el-button>
+        </div>
+      </div>
+      <el-table
+        :data="wards"
+        size="small"
+        border
+        row-key="ward_id"
+        :row-class-name="wardRowClass"
+      >
+        <el-table-column prop="type" label="病房" />
+        <el-table-column prop="bed_count" label="床位" width="100" />
+        <el-table-column prop="occupied" label="已入住" width="100" />
+        <el-table-column prop="available" label="可用" width="90" />
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.is_full ? 'danger' : 'success'">
+              {{ row.is_full ? '已满' : '可安排' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="选择" width="120">
+          <template #default="{ row }">
+            <el-button type="text" size="small" :disabled="row.is_full" @click="selectedWardId = row.ward_id">
+              {{ selectedWardId === row.ward_id ? '已选中' : '选择该病房' }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="selectedWard" class="selected-info">
+        当前选择：{{ selectedWard.type }} · 剩余 {{ selectedWard.available }} 床
+      </div>
+      <template #footer>
+        <el-button @click="admitDialogVisible = false">取 消</el-button>
+        <el-button type="primary" :loading="admitLoading" @click="confirmAdmit">确认住院</el-button>
+      </template>
+    </el-dialog>
 
     <el-card class="mt-3">
       <div class="option-grid">
@@ -72,7 +117,7 @@
                 </div>
               </div>
               <div class="action-row">
-                <el-button type="info" size="small" @click="onAdmit">办理</el-button>
+                <el-button type="info" size="small" @click="openAdmitDialog">办理</el-button>
               </div>
             </el-card>
           </div>
@@ -145,11 +190,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { FirstAidKit, Document, List, View, CreditCard } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import { startHandling, finishHandling, submitMedicalRecord, fetchConsultationInfo, fetchMedicalRecordByReg, createExamination, fetchExaminations } from "../../api/modules/doctor";
+import { startHandling, finishHandling, submitMedicalRecord, fetchConsultationInfo, fetchMedicalRecordByReg, createExamination, fetchExaminations, fetchDoctorWards, hospitalizePatient, exportTransferForm, WardInfo } from "../../api/modules/doctor";
 import { fetchPatientById } from "../../api/modules/patient";
 
 const route = useRoute();
@@ -168,6 +213,11 @@ const exams = ref([] as Array<any>);
 const examDialogVisible = ref(false);
 const examType = ref("");
 const examLoading = ref(false);
+const wards = ref([] as Array<WardInfo>);
+const selectedWardId = ref<number | null>(null);
+const admitLoading = ref(false);
+const transferLoading = ref(false);
+const admitDialogVisible = ref(false);
 
 async function ensureStarted() {
   // 检查挂号当前状态，仅在仍为“排队中/待就诊/WAITING”时才调用 startHandling
@@ -306,8 +356,9 @@ async function submitExam() {
   }
 }
 
-async function onAdmit() {
-  ElMessage.info("办理住院功能暂未实现（占位）");
+function openAdmitDialog() {
+  admitDialogVisible.value = true;
+  void loadWards();
 }
 
 async function onFinish() {
@@ -329,10 +380,81 @@ function onExit() {
   router.push({ path: "/workspace/doctor" });
 }
 
+async function loadWards() {
+  try {
+    const { data } = await fetchDoctorWards();
+    wards.value = data;
+    const preferred = data.find((w) => !w.is_full);
+    if (selectedWardId.value && data.some((w) => w.ward_id === selectedWardId.value && !w.is_full)) {
+      return;
+    }
+    selectedWardId.value = preferred?.ward_id ?? data[0]?.ward_id ?? null;
+  } catch (err: any) {
+    console.error("loadWards error", err);
+  }
+}
+
+const selectedWard = computed(() => wards.value.find((w) => w.ward_id === selectedWardId.value) ?? null);
+
+async function confirmAdmit() {
+  if (!selectedWardId.value) {
+    ElMessage.warning("请先选择一个可用病房");
+    return;
+  }
+  const ward = wards.value.find((w) => w.ward_id === selectedWardId.value);
+  if (!ward || ward.is_full) {
+    ElMessage.warning("所选病房已满，请选择其他病房");
+    return;
+  }
+  admitLoading.value = true;
+  try {
+    await hospitalizePatient(regId, { ward_id: selectedWardId.value });
+    ElMessage.success("住院办理成功");
+    admitDialogVisible.value = false;
+    await loadWards();
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail ?? "住院办理失败");
+  } finally {
+    admitLoading.value = false;
+  }
+}
+
+async function onTransfer() {
+  if (!regId) {
+    return;
+  }
+  transferLoading.value = true;
+  try {
+    const response = await exportTransferForm(regId);
+    const blob = new Blob([response.data], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `transfer_${regId}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail ?? "导出转院单失败");
+  } finally {
+    transferLoading.value = false;
+  }
+}
+
+function wardRowClass({ row }: { row: WardInfo }) {
+  if (row.ward_id === selectedWardId.value) {
+    return "is-selected-row";
+  }
+  if (row.is_full) {
+    return "is-full-row";
+  }
+  return "";
+}
+
 onMounted(async () => {
   await ensureStarted();
   await loadPatient();
   await loadExams();
+  await loadWards();
 });
 </script>
 
@@ -401,4 +523,25 @@ onMounted(async () => {
 }
 
 .mt-3 { margin-top: 16px; }
+.ward-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.ward-actions {
+  display: flex;
+  gap: 8px;
+}
+.is-selected-row {
+  background: rgba(59, 130, 246, 0.08);
+}
+.is-full-row {
+  background: rgba(248, 113, 113, 0.08);
+}
+.selected-info {
+  margin-top: 12px;
+  color: #475569;
+  font-size: 14px;
+}
 </style>

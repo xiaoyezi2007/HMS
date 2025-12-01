@@ -1,18 +1,39 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import select, SQLModel
 from typing import List
+import io
 
 from app.core.config import get_session
 # --- 修改点：从 deps 导入，不再依赖 patient_service ---
 from app.api.deps import get_current_user_phone
 from app.models.user import UserAccount, UserRole
-from app.models.hospital import Doctor, Registration, RegStatus, MedicalRecord, Patient, Examination, Payment, PaymentType, Prescription, ExamResult
+from app.models.hospital import (
+    Doctor,
+    Registration,
+    RegStatus,
+    MedicalRecord,
+    Patient,
+    Examination,
+    Payment,
+    PaymentType,
+    Prescription,
+    Ward,
+    Hospitalization,
+    ExamResult,
+)
 from app.schemas.hospital import MedicalRecordCreate
 from app.schemas.hospital import ExaminationCreate
 import random
 
 router = APIRouter()
+
+
+class HospitalizePayload(SQLModel):
+    ward_id: int
 
 
 # --- 辅助函数：获取当前登录的医生对象 ---
@@ -31,6 +52,12 @@ async def get_current_doctor(
         raise HTTPException(status_code=404, detail="未找到您的医生档案信息")
 
     return doctor
+
+
+def format_datetime(dt):
+    if not dt:
+        return ""
+    return dt.strftime("%Y-%m-%d %H:%M")
 
 
 # --- 接口 1: 医生排班 ---
@@ -166,6 +193,32 @@ async def list_examinations(
     exams = (await session.execute(exam_stmt)).scalars().all()
     return exams
 
+
+@router.get("/wards")
+async def list_department_wards(
+    doctor: Doctor = Depends(get_current_doctor),
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(Ward).where(Ward.dept_id == doctor.dept_id)
+    wards = (await session.execute(stmt)).scalars().all()
+    out = []
+    for ward in wards:
+        count_stmt = select(func.count()).where(
+            Hospitalization.ward_id == ward.ward_id,
+            Hospitalization.status == "在院"
+        )
+        occupied = (await session.execute(count_stmt)).scalar_one() or 0
+        available = max(ward.bed_count - occupied, 0)
+        out.append({
+            "ward_id": ward.ward_id,
+            "type": ward.type,
+            "bed_count": ward.bed_count,
+            "occupied": occupied,
+            "available": available,
+            "is_full": occupied >= ward.bed_count
+        })
+    return out
+
 # --- 新：根据挂号ID查询对应病历（仅限接诊该挂号的医生） ---
 @router.get("/consultations/{reg_id}/record", response_model=MedicalRecord)
 async def get_record_by_reg(
@@ -208,6 +261,116 @@ async def get_consultation_info(
     return {"registration": registration, "patient": patient}
 
 
+@router.post("/consultations/{reg_id}/hospitalize")
+async def hospitalize_patient(
+    reg_id: int,
+    payload: HospitalizePayload,
+    doctor: Doctor = Depends(get_current_doctor),
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(Registration).where(Registration.reg_id == reg_id)
+    registration = (await session.execute(stmt)).scalars().first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="挂号单不存在")
+    if registration.doctor_id != doctor.doctor_id:
+        raise HTTPException(status_code=403, detail="您只能为自己的病人办理住院")
+
+    rec_stmt = select(MedicalRecord).where(MedicalRecord.reg_id == reg_id)
+    record = (await session.execute(rec_stmt)).scalars().first()
+    if not record:
+        raise HTTPException(status_code=404, detail="请先建立病历再办理住院")
+
+    ward = await session.get(Ward, payload.ward_id)
+    if not ward or ward.dept_id != doctor.dept_id:
+        raise HTTPException(status_code=400, detail="请选择当前科室的有效病房")
+
+    count_stmt = select(func.count()).where(
+        Hospitalization.ward_id == ward.ward_id,
+        Hospitalization.status == "在院"
+    )
+    occupied = (await session.execute(count_stmt)).scalar_one() or 0
+    if occupied >= ward.bed_count:
+        raise HTTPException(status_code=400, detail="该病房已满，请选择其他病房")
+
+    hosp = Hospitalization(
+        ward_id=ward.ward_id,
+        status="在院",
+        hosp_doctor_id=doctor.doctor_id,
+        record_id=record.record_id
+    )
+    session.add(hosp)
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        msg = str(getattr(exc, "orig", exc)).lower()
+        if "uq_hosp_active_record_id" in msg or "duplicate entry" in msg:
+            raise HTTPException(status_code=400, detail="该患者已在院，无法重复办理")
+        raise HTTPException(status_code=400, detail="住院办理失败，请稍后再试")
+    await session.refresh(hosp)
+    return {"message": "住院办理完成", "hospitalization": hosp}
+
+
+@router.get("/consultations/{reg_id}/transfer")
+async def generate_transfer_form(
+    reg_id: int,
+    doctor: Doctor = Depends(get_current_doctor),
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(Registration).where(Registration.reg_id == reg_id)
+    registration = (await session.execute(stmt)).scalars().first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="挂号单不存在")
+    if registration.doctor_id != doctor.doctor_id:
+        raise HTTPException(status_code=403, detail="您只能为自己的病人申请转院")
+
+    patient = await session.get(Patient, registration.patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="关联患者不存在")
+
+    rec_stmt = select(MedicalRecord).where(MedicalRecord.reg_id == reg_id)
+    record = (await session.execute(rec_stmt)).scalars().first()
+
+    exams = []
+    if record:
+        exam_stmt = select(Examination).where(Examination.record_id == record.record_id)
+        exams = (await session.execute(exam_stmt)).scalars().all()
+
+    lines = [
+        "转院申请单",
+        f"挂号ID：{registration.reg_id}",
+        f"患者：{patient.name}（ID: {patient.patient_id}）", 
+        f"联系方式：{patient.phone}",
+        "",
+        "【挂号信息】",
+        f"挂号时间：{format_datetime(registration.reg_date)}",
+        f"挂号类型：{registration.reg_type}",
+        f"挂号状态：{registration.status}",
+        "",
+        "【病历摘要】"
+    ]
+    if record:
+        lines.extend([
+            f"主诉：{record.complaint}",
+            f"诊断：{record.diagnosis}",
+            f"建议：{record.suggestion}",
+        ])
+    else:
+        lines.append("尚未填写病历")
+
+    lines.append("")
+    lines.append("【检查记录】")
+    if exams:
+        for exam in exams:
+            lines.append(f"{exam.type} · 结果：{exam.result} · {format_datetime(exam.date)}")
+    else:
+        lines.append("暂未开具检查")
+
+    content = "\n".join(lines)
+    payload = io.BytesIO(content.encode("utf-8"))
+    response = StreamingResponse(payload, media_type="text/plain")
+    response.headers["content-disposition"] = f"attachment; filename=transfer_{reg_id}.txt"
+    return response
 # --- 新：开始办理（将 status 从 WAITING 改为 IN_PROGRESS） ---
 @router.post("/consultations/{reg_id}/start")
 async def start_handling(

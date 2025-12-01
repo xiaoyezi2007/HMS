@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -8,7 +9,7 @@ from app.api.deps import get_current_admin_user
 from app.core.config import get_session
 from app.core.security import get_password_hash
 from app.models.user import UserAccount, UserRole
-from app.models.hospital import Doctor, Nurse, Department, Gender
+from app.models.hospital import Doctor, Nurse, Department, Gender, Payment, Patient
 from app.schemas.user import StaffAccountCreate, UserAccountSafe
 from app.schemas.hospital import DoctorTitleUpdate, NurseHeadUpdate, ALLOWED_DOCTOR_TITLES
 
@@ -236,3 +237,68 @@ async def update_nurse_head_status(
     await session.commit()
     await session.refresh(nurse)
     return nurse
+
+
+@router.get("/admin/revenue")
+async def get_revenue_summary(
+    _: UserAccount = Depends(get_current_admin_user),
+    session: AsyncSession = Depends(get_session)
+):
+    paid_filter = Payment.status == "已缴费"
+
+    total_stmt = select(
+        func.coalesce(func.sum(Payment.amount), 0).label("total_amount"),
+        func.count(Payment.payment_id).label("paid_count")
+    ).where(paid_filter)
+    total_row = (await session.execute(total_stmt)).first()
+    total_amount = float(total_row.total_amount) if total_row and total_row.total_amount is not None else 0.0
+    paid_count = total_row.paid_count if total_row else 0
+
+    type_stmt = (
+        select(
+            Payment.type,
+            func.coalesce(func.sum(Payment.amount), 0).label("amount"),
+            func.count(Payment.payment_id).label("count")
+        )
+        .where(paid_filter)
+        .group_by(Payment.type)
+    )
+    type_rows = await session.execute(type_stmt)
+    by_type = []
+    for row in type_rows:
+        entry_type = row.type.value if hasattr(row.type, "value") else row.type
+        by_type.append({
+            "type": entry_type,
+            "amount": float(row.amount or 0.0),
+            "count": row.count
+        })
+
+    record_stmt = (
+        select(Payment, Patient.name, Patient.phone)
+        .join(Patient, Payment.patient_id == Patient.patient_id)
+        .where(paid_filter)
+        .order_by(Payment.time.desc())
+        .limit(200)
+    )
+    record_rows = await session.execute(record_stmt)
+    records = []
+    for payment, patient_name, patient_phone in record_rows.all():
+        records.append({
+            "payment_id": payment.payment_id,
+            "type": payment.type.value if hasattr(payment.type, "value") else payment.type,
+            "amount": payment.amount,
+            "time": payment.time,
+            "patient_id": payment.patient_id,
+            "patient_name": patient_name,
+            "patient_phone": patient_phone,
+            "pres_id": payment.pres_id,
+            "exam_id": payment.exam_id,
+            "hosp_id": payment.hosp_id
+        })
+
+    return {
+        "total_amount": total_amount,
+        "paid_count": paid_count,
+        "by_type": by_type,
+        "records": records
+    }

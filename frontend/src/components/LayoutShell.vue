@@ -37,16 +37,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { House, User, FirstAidKit, Tickets, List, Management, Document, CreditCard, View } from "@element-plus/icons-vue";
+import { House, User, FirstAidKit, Tickets, List, Management, Document, CreditCard, View, Coin } from "@element-plus/icons-vue";
 import { useAuthStore } from "../stores/auth";
+import { fetchNurseProfile } from "../api/modules/nurse";
 
 interface MenuItem {
   path: string;
   label: string;
   roles: string[];
   icon: any;
+  headOnly?: boolean;
 }
 
 const router = useRouter();
@@ -63,19 +65,27 @@ const menuConfig: MenuItem[] = [
   { path: "/workspace/doctor", label: "医生工作站", roles: ["医生"], icon: FirstAidKit },
   { path: "/workspace/doctor/profile", label: "个人主页", roles: ["医生"], icon: User },
   { path: "/workspace/nurse", label: "护士工作站", roles: ["护士"], icon: Tickets },
+  { path: "/workspace/nurse/schedule-management", label: "排班管理", roles: ["护士"], icon: Document, headOnly: true },
   { path: "/workspace/nurse/profile", label: "个人主页", roles: ["护士"], icon: User },
   { path: "/workspace/pharmacy", label: "库存管理", roles: ["药师"], icon: List },
   { path: "/workspace/pharmacy/profile", label: "个人主页", roles: ["药师"], icon: User },
   { path: "/workspace/admin", label: "管理驾驶舱", roles: ["管理员"], icon: Management },
+  { path: "/workspace/admin/revenue", label: "营收记录", roles: ["管理员"], icon: Coin },
   { path: "/workspace/admin/profile", label: "个人主页", roles: ["管理员"], icon: User }
 ];
 
 const availableMenu = computed(() =>
   menuConfig.filter((item: MenuItem) => {
     if (!auth.currentRole) {
-      return item.roles.length > 0;
+      return item.roles.length > 0 && !item.headOnly;
     }
-    return item.roles.indexOf(auth.currentRole) !== -1;
+    if (item.roles.indexOf(auth.currentRole) === -1) {
+      return false;
+    }
+    if (item.headOnly && !auth.isHeadNurse) {
+      return false;
+    }
+    return true;
   })
 );
 
@@ -100,6 +110,31 @@ function onLogout() {
   auth.logout();
   router.replace("/login");
 }
+
+async function syncHeadNurseStatus() {
+  if (!auth.isAuthenticated || auth.currentRole !== "护士") {
+    auth.setHeadNurseFlag(false);
+    return;
+  }
+  try {
+    const { data } = await fetchNurseProfile();
+    auth.setHeadNurseFlag(Boolean(data.is_head_nurse));
+  } catch (err) {
+    console.warn("fetchNurseProfile failed", err);
+    auth.setHeadNurseFlag(false);
+  }
+}
+
+onMounted(() => {
+  void syncHeadNurseStatus();
+});
+
+watch(
+  () => [auth.currentRole, auth.isAuthenticated],
+  () => {
+    void syncHeadNurseStatus();
+  }
+);
 </script>
 
 <style scoped>
