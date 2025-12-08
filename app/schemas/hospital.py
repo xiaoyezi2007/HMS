@@ -74,3 +74,35 @@ class DoctorTitleUpdate(SQLModel):
 
 class NurseHeadUpdate(SQLModel):
     is_head_nurse: bool
+
+
+class DepartmentCreate(SQLModel):
+    dept_name: str
+    telephone: str | None = None
+
+    @field_validator("dept_name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("科室名称不能为空")
+        return value.strip()
+
+
+class WardCreate(SQLModel):
+    dept_id: int
+    bed_count: int
+    type: str
+
+    @field_validator("bed_count")
+    @classmethod
+    def validate_bed_count(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("床位数必须大于 0")
+        return value
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("病房类型不能为空")
+        return value.strip()

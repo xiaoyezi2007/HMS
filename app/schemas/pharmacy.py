@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel
 from typing import List
-from datetime import datetime
+from datetime import datetime, date
 
 class PresItem(SQLModel):
     medicine_id: int
@@ -23,3 +23,11 @@ class PrescriptionRead(SQLModel):
 class MedicinePurchase(SQLModel):
     medicine_id: int
     quantity: int
+
+
+class MedicineCreate(SQLModel):
+    name: str
+    price: float
+    stock: int
+    unit: str
+    expire_date: date

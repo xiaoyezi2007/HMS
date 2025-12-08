@@ -9,6 +9,84 @@
     <el-card shadow="hover">
       <template #header>
         <div class="card-header">
+          <span>新增科室</span>
+          <small>仅院长可操作，科室名称需唯一</small>
+        </div>
+      </template>
+      <el-form :model="deptForm" label-width="90px">
+        <el-row :gutter="12">
+          <el-col :xs="24" :sm="14" :md="10">
+            <el-form-item label="科室名称">
+              <el-input v-model="deptForm.dept_name" placeholder="如 心内科" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="10" :md="8">
+            <el-form-item label="电话">
+              <el-input v-model="deptForm.telephone" placeholder="可选" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="24" :md="6" class="form-actions">
+            <el-button type="primary" :loading="deptCreating" @click="handleCreateDepartment">新增科室</el-button>
+            <el-button @click="resetDeptForm">重置</el-button>
+          </el-col>
+        </el-row>
+      </el-form>
+    </el-card>
+
+    <el-card shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <span>新增病房</span>
+          <small>需先选择科室，再录入床位数和类型</small>
+        </div>
+      </template>
+      <el-form :model="wardForm" label-width="90px">
+        <el-row :gutter="12">
+          <el-col :xs="24" :sm="12" :md="8">
+            <el-form-item label="科室">
+              <el-select v-model="wardForm.dept_id" placeholder="选择所属科室" filterable :loading="deptLoading">
+                <el-option v-for="dept in departments" :key="dept.dept_id" :label="dept.dept_name" :value="dept.dept_id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6">
+            <el-form-item label="类型">
+              <el-input v-model="wardForm.type" placeholder="如 普通房/单人房" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6">
+            <el-form-item label="床位数">
+              <el-input-number v-model="wardForm.bed_count" :min="1" :precision="0" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="24" :md="4" class="form-actions">
+            <el-button type="primary" :loading="wardCreating" @click="handleCreateWard">新增病房</el-button>
+            <el-button @click="resetWardForm">重置</el-button>
+          </el-col>
+        </el-row>
+      </el-form>
+      <div class="management-toolbar" style="margin-top: 12px">
+        <el-input v-model="searchWardDept" placeholder="按科室搜索" clearable />
+        <el-input v-model="searchWardType" placeholder="按病房类型搜索" clearable />
+        <el-button type="primary" link :loading="wardLoading" @click="loadWards">刷新</el-button>
+        <el-checkbox v-model="showHiddenWards">显示已删除项</el-checkbox>
+      </div>
+      <el-table :data="visibleWards" v-loading="wardLoading" size="small" border>
+        <el-table-column prop="dept_name" label="科室" min-width="160" />
+        <el-table-column prop="type" label="病房类型" min-width="140" />
+        <el-table-column prop="bed_count" label="床位数" width="120" />
+        <el-table-column prop="ward_id" label="ID" width="120" />
+        <el-table-column label="操作" width="120">
+          <template #default="scope">
+            <el-button type="danger" link @click="handleHideWard(scope.row.ward_id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card shadow="hover">
+      <template #header>
+        <div class="card-header">
           <span>新增医护账号</span>
           <small>手机号将作为登录名，初始密码固定为 123456</small>
         </div>
@@ -187,7 +265,11 @@ import {
   fetchNurses,
   updateNurseHeadStatus,
   fetchDepartments,
-  type DepartmentItem
+  fetchAdminWards,
+  createDepartment,
+  createWard,
+  type DepartmentItem,
+  type WardItem
 } from "../../api/modules/admin";
 import type { StaffAccount, DoctorProfile, NurseProfile } from "../../api/modules/admin";
 
@@ -235,6 +317,36 @@ const pageSize = ref(10);
 const pageSizeOptions = [5, 10, 20, 50];
 const departments = ref<DepartmentItem[]>([]);
 const deptLoading = ref(false);
+const deptCreating = ref(false);
+const wardCreating = ref(false);
+const wardLoading = ref(false);
+const wardList = ref<WardItem[]>([]);
+const hiddenWardIds = ref<Set<number>>(new Set());
+const searchWardDept = ref("");
+const searchWardType = ref("");
+const showHiddenWards = ref(false);
+const visibleWards = computed(() => {
+  return wardList.value.filter((w) => {
+    const matchDept = searchWardDept.value.trim()
+      ? w.dept_name.toLowerCase().includes(searchWardDept.value.trim().toLowerCase())
+      : true;
+    const matchType = searchWardType.value.trim()
+      ? w.type.toLowerCase().includes(searchWardType.value.trim().toLowerCase())
+      : true;
+    const isHidden = hiddenWardIds.value.has(w.ward_id);
+    const shouldShow = showHiddenWards.value ? true : !isHidden;
+    return matchDept && matchType && shouldShow;
+  });
+});
+const deptForm = reactive({
+  dept_name: "",
+  telephone: ""
+});
+const wardForm = reactive({
+  dept_id: null as number | null,
+  type: "",
+  bed_count: 0
+});
 const isDoctorRole = computed(() => createForm.role === "医生");
 const isNurseRole = computed(() => createForm.role === "护士");
 const doctorFormInvalid = computed(() => {
@@ -370,6 +482,17 @@ function resetForm() {
   createForm.nurse_gender = "";
 }
 
+function resetDeptForm() {
+  deptForm.dept_name = "";
+  deptForm.telephone = "";
+}
+
+function resetWardForm() {
+  wardForm.dept_id = null;
+  wardForm.type = "";
+  wardForm.bed_count = 0;
+}
+
 function formatDate(value: string) {
   if (!value) {
     return "-";
@@ -458,6 +581,63 @@ function handleCreate() {
     })
     .then(() => {
       creating.value = false;
+    });
+}
+
+function handleCreateDepartment() {
+  if (!deptForm.dept_name.trim()) {
+    ElMessage.warning("请填写科室名称");
+    return;
+  }
+  deptCreating.value = true;
+  createDepartment({
+    dept_name: deptForm.dept_name.trim(),
+    telephone: deptForm.telephone.trim() || undefined
+  })
+    .then(() => {
+      ElMessage.success("新增科室成功");
+      resetDeptForm();
+      return loadDepartments();
+    })
+    .catch((error: any) => {
+      const message = error?.response?.data?.detail;
+      ElMessage.error(message || "新增科室失败");
+    })
+    .finally(() => {
+      deptCreating.value = false;
+    });
+}
+
+function handleCreateWard() {
+  if (!wardForm.dept_id) {
+    ElMessage.warning("请选择所属科室");
+    return;
+  }
+  if (!wardForm.type.trim()) {
+    ElMessage.warning("请填写病房类型");
+    return;
+  }
+  if (!wardForm.bed_count || wardForm.bed_count <= 0) {
+    ElMessage.warning("床位数必须大于 0");
+    return;
+  }
+  wardCreating.value = true;
+  createWard({
+    dept_id: wardForm.dept_id,
+    type: wardForm.type.trim(),
+    bed_count: wardForm.bed_count
+  })
+    .then(() => {
+      ElMessage.success("新增病房成功");
+      resetWardForm();
+      return loadWards();
+    })
+    .catch((error: any) => {
+      const message = error?.response?.data?.detail;
+      ElMessage.error(message || "新增病房失败");
+    })
+    .finally(() => {
+      wardCreating.value = false;
     });
 }
 
@@ -558,6 +738,7 @@ function handleNurseHeadToggle(nurseId: number | undefined, isHead: boolean) {
 onMounted(() => {
   refreshStaffData();
   loadDepartments();
+  loadWards();
 });
 
 function refreshStaffData() {
@@ -572,11 +753,36 @@ async function loadDepartments() {
     const { data } = await fetchDepartments();
     departments.value = data;
   } catch (error: any) {
-    const message = error && error.response && error.response.data && error.response.data.detail;
+    const message = error?.response?.data?.detail;
     ElMessage.error(message || "科室数据获取失败");
   } finally {
     deptLoading.value = false;
   }
+}
+
+async function loadWards() {
+  try {
+    wardLoading.value = true;
+    const { data } = await fetchAdminWards();
+    wardList.value = data;
+    const currentIds = new Set(data.map((w) => w.ward_id));
+    hiddenWardIds.value = new Set(Array.from(hiddenWardIds.value).filter((id) => currentIds.has(id)));
+  } catch (error: any) {
+    const message = error?.response?.data?.detail;
+    ElMessage.error(message || "病房数据获取失败");
+  } finally {
+    wardLoading.value = false;
+  }
+}
+
+function handleHideWard(wardId: number) {
+  const next = new Set(hiddenWardIds.value);
+  if (next.has(wardId)) {
+    next.delete(wardId);
+  } else {
+    next.add(wardId);
+  }
+  hiddenWardIds.value = next;
 }
 
 watch(

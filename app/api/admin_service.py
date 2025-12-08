@@ -9,9 +9,15 @@ from app.api.deps import get_current_admin_user
 from app.core.config import get_session
 from app.core.security import get_password_hash
 from app.models.user import UserAccount, UserRole
-from app.models.hospital import Doctor, Nurse, Department, Gender, Payment, Patient
+from app.models.hospital import Doctor, Nurse, Department, Ward, Gender, Payment, Patient
 from app.schemas.user import StaffAccountCreate, UserAccountSafe
-from app.schemas.hospital import DoctorTitleUpdate, NurseHeadUpdate, ALLOWED_DOCTOR_TITLES
+from app.schemas.hospital import (
+    DoctorTitleUpdate,
+    NurseHeadUpdate,
+    ALLOWED_DOCTOR_TITLES,
+    DepartmentCreate,
+    WardCreate,
+)
 
 router = APIRouter()
 
@@ -301,4 +307,67 @@ async def get_revenue_summary(
         "paid_count": paid_count,
         "by_type": by_type,
         "records": records
+    }
+
+
+@router.post("/admin/departments", response_model=Department, status_code=status.HTTP_201_CREATED)
+async def create_department(
+    payload: DepartmentCreate,
+    _: UserAccount = Depends(get_current_admin_user),
+    session: AsyncSession = Depends(get_session)
+):
+    existing = (await session.execute(select(Department).where(Department.dept_name == payload.dept_name))).scalars().first()
+    if existing:
+        raise HTTPException(status_code=400, detail="科室名称已存在")
+
+    dept = Department(dept_name=payload.dept_name, telephone=payload.telephone)
+    session.add(dept)
+    await session.commit()
+    await session.refresh(dept)
+    return dept
+
+
+@router.get("/admin/wards")
+async def list_wards(
+    _: UserAccount = Depends(get_current_admin_user),
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(Ward, Department.dept_name).join(Department, Ward.dept_id == Department.dept_id)
+    rows = await session.execute(stmt)
+    result = []
+    for ward, dept_name in rows.all():
+        result.append({
+            "ward_id": ward.ward_id,
+            "bed_count": ward.bed_count,
+            "type": ward.type,
+            "dept_id": ward.dept_id,
+            "dept_name": dept_name
+        })
+    return result
+
+
+@router.post("/admin/wards", status_code=status.HTTP_201_CREATED)
+async def create_ward(
+    payload: WardCreate,
+    _: UserAccount = Depends(get_current_admin_user),
+    session: AsyncSession = Depends(get_session)
+):
+    dept = await session.get(Department, payload.dept_id)
+    if not dept:
+        raise HTTPException(status_code=404, detail="科室不存在")
+    if payload.bed_count <= 0:
+        raise HTTPException(status_code=400, detail="床位数必须大于 0")
+    if not payload.type.strip():
+        raise HTTPException(status_code=400, detail="病房类型不能为空")
+
+    ward = Ward(dept_id=payload.dept_id, bed_count=payload.bed_count, type=payload.type.strip())
+    session.add(ward)
+    await session.commit()
+    await session.refresh(ward)
+    return {
+        "ward_id": ward.ward_id,
+        "bed_count": ward.bed_count,
+        "type": ward.type,
+        "dept_id": ward.dept_id,
+        "dept_name": dept.dept_name
     }

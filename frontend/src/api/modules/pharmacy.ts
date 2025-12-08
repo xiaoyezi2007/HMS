@@ -25,6 +25,14 @@ export interface MedicinePurchasePayload {
   quantity: number;
 }
 
+export interface MedicineCreatePayload {
+  name: string;
+  price: number;
+  stock: number;
+  unit: string;
+  expire_date: string;
+}
+
 export function fetchMedicines() {
   return http.get<MedicineItem[]>("/api/pharmacy/medicines");
 }
@@ -39,4 +47,8 @@ export function fetchPrescriptionByRecord(recordId: number) {
 
 export function purchaseMedicine(payload: MedicinePurchasePayload) {
   return http.post<MedicineItem>("/api/pharmacy/medicines/purchase", payload);
+}
+
+export function createMedicine(payload: MedicineCreatePayload) {
+  return http.post<MedicineItem>("/api/pharmacy/medicines", payload);
 }

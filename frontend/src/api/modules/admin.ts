@@ -21,6 +21,25 @@ export interface DepartmentItem {
   telephone?: string;
 }
 
+export interface WardItem {
+  ward_id: number;
+  dept_id: number;
+  dept_name: string;
+  bed_count: number;
+  type: string;
+}
+
+export interface DepartmentCreatePayload {
+  dept_name: string;
+  telephone?: string;
+}
+
+export interface WardCreatePayload {
+  dept_id: number;
+  bed_count: number;
+  type: string;
+}
+
 export interface DoctorProfile {
   doctor_id: number;
   name: string;
@@ -76,8 +95,20 @@ export function createStaffAccount(payload: StaffAccountPayload) {
   return http.post<StaffAccount>("/api/admin/accounts", payload);
 }
 
+export function createDepartment(payload: DepartmentCreatePayload) {
+  return http.post<DepartmentItem>("/api/admin/departments", payload);
+}
+
 export function fetchDepartments() {
   return http.get<DepartmentItem[]>("/api/departments");
+}
+
+export function fetchAdminWards() {
+  return http.get<WardItem[]>("/api/admin/wards");
+}
+
+export function createWard(payload: WardCreatePayload) {
+  return http.post<WardItem>("/api/admin/wards", payload);
 }
 
 export function deleteStaffAccount(phone: string) {

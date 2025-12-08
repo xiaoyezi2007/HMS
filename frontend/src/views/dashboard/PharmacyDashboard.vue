@@ -53,6 +53,54 @@
     <el-card>
       <template #header>
         <div class="card-header">
+          <span>新增药品</span>
+          <small>录入新的药品品类并设置基础信息</small>
+        </div>
+      </template>
+      <el-form :model="createForm" label-width="90px">
+        <el-row :gutter="16">
+          <el-col :xs="24" :sm="12" :md="8">
+            <el-form-item label="名称">
+              <el-input v-model="createForm.name" placeholder="如 布洛芬缓释胶囊" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6">
+            <el-form-item label="单位">
+              <el-input v-model="createForm.unit" placeholder="盒/瓶/支" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="5">
+            <el-form-item label="单价">
+              <el-input-number v-model="createForm.price" :min="0" :step="0.5" :precision="2" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="5">
+            <el-form-item label="初始库存">
+              <el-input-number v-model="createForm.stock" :min="0" :precision="0" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16" align="middle">
+          <el-col :xs="24" :sm="12" :md="8">
+            <el-form-item label="有效期">
+              <el-date-picker
+                v-model="createForm.expire_date"
+                type="date"
+                placeholder="选择日期"
+                value-format="YYYY-MM-DD"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6" class="form-actions">
+            <el-button type="primary" :loading="createLoading" @click="submitCreate">新增药品</el-button>
+          </el-col>
+        </el-row>
+      </el-form>
+    </el-card>
+
+    <el-card>
+      <template #header>
+        <div class="card-header">
           <span>采购药品</span>
           <small>补充库存，数量会自动累加到当前库存</small>
         </div>
@@ -110,14 +158,22 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { fetchMedicines, purchaseMedicine, type MedicineItem } from "../../api/modules/pharmacy";
+import { fetchMedicines, purchaseMedicine, createMedicine, type MedicineItem } from "../../api/modules/pharmacy";
 
 const medicines = ref<MedicineItem[]>([]);
 const purchaseForm = reactive({
   medicine_id: undefined as number | undefined,
   quantity: 1
 });
+const createForm = reactive({
+  name: "",
+  price: 0,
+  stock: 0,
+  unit: "",
+  expire_date: ""
+});
 const purchaseLoading = ref(false);
+const createLoading = ref(false);
 const lowStockThreshold = 50;
 
 const lowStockList = computed(() => medicines.value.filter((med) => med.stock < lowStockThreshold));
@@ -155,6 +211,47 @@ async function submitPurchase() {
     ElMessage.error(error.response?.data?.detail ?? "采购失败");
   } finally {
     purchaseLoading.value = false;
+  }
+}
+
+async function submitCreate() {
+  if (!createForm.name.trim()) {
+    ElMessage.warning("请填写药品名称");
+    return;
+  }
+  if (!createForm.unit.trim()) {
+    ElMessage.warning("请填写单位");
+    return;
+  }
+  if (!createForm.expire_date) {
+    ElMessage.warning("请选择有效期");
+    return;
+  }
+  if (createForm.price < 0) {
+    ElMessage.warning("单价不能为负数");
+    return;
+  }
+  if (createForm.stock < 0) {
+    ElMessage.warning("库存不能为负数");
+    return;
+  }
+  createLoading.value = true;
+  try {
+    await createMedicine({
+      name: createForm.name.trim(),
+      price: createForm.price,
+      stock: createForm.stock,
+      unit: createForm.unit.trim(),
+      expire_date: createForm.expire_date
+    });
+    ElMessage.success("新增药品成功");
+    Object.assign(createForm, { name: "", price: 0, stock: 0, unit: "", expire_date: "" });
+    await loadMedicines();
+  } catch (error: any) {
+    console.error("create medicine error", error);
+    ElMessage.error(error.response?.data?.detail ?? "新增药品失败");
+  } finally {
+    createLoading.value = false;
   }
 }
 

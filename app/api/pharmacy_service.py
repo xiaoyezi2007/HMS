@@ -7,7 +7,7 @@ from app.core.config import get_session
 from app.api.deps import get_current_user, get_current_user_phone
 from app.models.hospital import Doctor, Medicine, Prescription, PrescriptionDetail, MedicalRecord, Registration, RegStatus
 from app.models.user import UserAccount, UserRole
-from app.schemas.pharmacy import PrescriptionCreate, PrescriptionRead, MedicinePurchase
+from app.schemas.pharmacy import PrescriptionCreate, PrescriptionRead, MedicinePurchase, MedicineCreate
 
 router = APIRouter()
 
@@ -48,6 +48,34 @@ async def purchase_medicine(
     if not med:
         raise HTTPException(status_code=404, detail="药品不存在")
     med.stock += payload.quantity
+    session.add(med)
+    await session.commit()
+    await session.refresh(med)
+    return med
+
+
+@router.post("/medicines", response_model=Medicine)
+async def create_medicine(
+    payload: MedicineCreate,
+    pharmacist: UserAccount = Depends(get_current_pharmacist),
+    session: AsyncSession = Depends(get_session)
+):
+    # 名称去重校验
+    existing = (await session.execute(select(Medicine).where(Medicine.name == payload.name))).scalars().first()
+    if existing:
+        raise HTTPException(status_code=400, detail="药品名称已存在")
+    if payload.price < 0:
+        raise HTTPException(status_code=400, detail="单价不能为负数")
+    if payload.stock < 0:
+        raise HTTPException(status_code=400, detail="库存不能为负数")
+
+    med = Medicine(
+        name=payload.name,
+        price=payload.price,
+        stock=payload.stock,
+        unit=payload.unit,
+        expire_date=payload.expire_date
+    )
     session.add(med)
     await session.commit()
     await session.refresh(med)
