@@ -392,20 +392,14 @@ async def start_handling(
     await session.commit()
     await session.refresh(registration)
     # 在开始办理时创建挂号缴费（挂号费）——金额等于挂号单的 fee
-    try:
-        pay_stmt = select(Payment).where(
-            Payment.type == PaymentType.REGISTRATION,
-            Payment.patient_id == registration.patient_id,
-            Payment.amount == registration.fee
-        )
-        existing = (await session.execute(pay_stmt)).scalars().first()
-    except Exception:
-        existing = None
-
-    if not existing:
-        p = Payment(type=PaymentType.REGISTRATION, amount=registration.fee, patient_id=registration.patient_id)
-        session.add(p)
-        await session.commit()
+    # 依靠 Payment.time 记录即可区分多次缴费请求，无需再按金额防重复
+    payment = Payment(
+        type=PaymentType.REGISTRATION,
+        amount=registration.fee,
+        patient_id=registration.patient_id
+    )
+    session.add(payment)
+    await session.commit()
     return registration
 
 
