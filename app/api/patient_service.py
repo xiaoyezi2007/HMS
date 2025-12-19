@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from typing import List
@@ -14,6 +15,7 @@ from app.models.hospital import (
     Registration,
     RegStatus,
     MedicalRecord,
+    PaymentType,
 )
 from app.models.hospital import (
     Payment,
@@ -28,6 +30,76 @@ from app.models.user import UserAccount, UserRole
 from app.schemas.hospital import PatientCreate, RegistrationCreate
 
 router = APIRouter()
+
+
+async def _apply_expired_registrations_for_patient(session: AsyncSession, patient_id: int) -> None:
+    """Mark overdue WAITING registrations as EXPIRED and sync registration fee payment status.
+
+    Rules:
+    - If today > visit_date and registration is WAITING, set registration.status = 已过期
+    - For an expired registration:
+        - if its registration fee payment is not 已缴费, set payment.status = 已取消
+        - if 已缴费, keep 已缴费 (no refund)
+    """
+
+    today = date.today()
+    stmt = select(Registration).where(
+        Registration.patient_id == patient_id,
+        Registration.status == RegStatus.WAITING,
+        Registration.visit_date < today,
+    )
+    regs = (await session.execute(stmt)).scalars().all()
+    if not regs:
+        return
+
+    for reg in regs:
+        with session.no_autoflush:
+            pay_stmt = (
+                select(Payment)
+                .where(Payment.patient_id == patient_id)
+                .where(
+                    or_(
+                        Payment.type == PaymentType.REGISTRATION,
+                        Payment.type == "挂号费",
+                        Payment.type == "REGISTRATION",
+                    )
+                )
+                .where(Payment.reg_id == reg.reg_id)
+                .order_by(Payment.time.desc(), Payment.payment_id.desc())
+            )
+            payment = (await session.execute(pay_stmt)).scalars().first()
+
+            # Backward compatibility: older rows may not have reg_id filled.
+            if not payment:
+                window_start = reg.reg_date - timedelta(hours=2)
+                window_end = reg.reg_date + timedelta(hours=2)
+                pay_stmt2 = (
+                    select(Payment)
+                    .where(Payment.patient_id == patient_id)
+                    .where(
+                        or_(
+                            Payment.type == PaymentType.REGISTRATION,
+                            Payment.type == "挂号费",
+                            Payment.type == "REGISTRATION",
+                        )
+                    )
+                    .where(Payment.pres_id.is_(None))
+                    .where(Payment.exam_id.is_(None))
+                    .where(Payment.hosp_id.is_(None))
+                    .where(Payment.time >= window_start)
+                    .where(Payment.time <= window_end)
+                    .order_by(Payment.time.desc(), Payment.payment_id.desc())
+                )
+                payment = (await session.execute(pay_stmt2)).scalars().first()
+
+        reg.status = RegStatus.EXPIRED
+        session.add(reg)
+
+        if payment and getattr(payment, "status", "未缴费") != "已缴费":
+            payment.status = "已取消"
+            session.add(payment)
+
+    await session.commit()
 
 
 # --- 接口 1: 查询患者档案 ---
@@ -169,17 +241,40 @@ async def create_registration(
     if not patient:
         raise HTTPException(status_code=400, detail="请先完善个人信息档案")
 
+    # 规则：患者同一时间只能有一个“未完成”的挂号（排队中/就诊中）。
+    active_stmt = select(Registration.reg_id).where(
+        Registration.patient_id == patient.patient_id,
+        Registration.status.in_([RegStatus.WAITING, RegStatus.IN_PROGRESS])
+    )
+    active_reg_id = (await session.execute(active_stmt)).scalars().first()
+    if active_reg_id:
+        raise HTTPException(status_code=400, detail="您还有未完成的挂号，请在上一次挂号完成后再进行下一次挂号")
+
     fee = 50.0 if reg_in.reg_type == "专家号" else 10.0
 
     new_reg = Registration(
         patient_id=patient.patient_id,
         doctor_id=reg_in.doctor_id,
         reg_type=reg_in.reg_type,
+        visit_date=getattr(reg_in, 'visit_date', None) or datetime.now().date(),
         fee=fee,
         status=RegStatus.WAITING
     )
 
+    # 挂号时就生成一条“待缴费”的挂号费记录
     session.add(new_reg)
+    await session.flush()
+    session.add(
+        Payment(
+            type=PaymentType.REGISTRATION,
+            amount=fee,
+            patient_id=patient.patient_id,
+            status="未缴费",
+            time=new_reg.reg_date,
+            reg_id=new_reg.reg_id,
+        )
+    )
+
     await session.commit()
     await session.refresh(new_reg)
     return new_reg
@@ -205,8 +300,98 @@ async def cancel_registration(
     if reg.status != RegStatus.WAITING:
         raise HTTPException(status_code=400, detail="只有未开始的挂号可以取消")
 
+    # 找到最新的“挂号费”缴费记录：
+    # 由于系统限制同一时间只有一个未完成挂号，因此取最新一条即可。
+    # 优先按 reg_id 精确锁定对应挂号费
+    pay_stmt_exact = (
+        select(Payment)
+        .where(Payment.patient_id == patient.patient_id)
+        .where(
+            or_(
+                Payment.type == PaymentType.REGISTRATION,
+                Payment.type == "挂号费",
+                Payment.type == "REGISTRATION",
+            )
+        )
+        .where(Payment.reg_id == reg.reg_id)
+        .order_by(Payment.time.desc(), Payment.payment_id.desc())
+    )
+    payment = (await session.execute(pay_stmt_exact)).scalars().first()
+
+    # 兼容旧数据：按“本次挂号时间窗口”锁定对应挂号费（避免历史遗留的挂号费误匹配）
+    window_start = reg.reg_date - timedelta(hours=2)
+    window_end = reg.reg_date + timedelta(hours=2)
+    if not payment:
+        pay_stmt = (
+            select(Payment)
+            .where(Payment.patient_id == patient.patient_id)
+            .where(
+                or_(
+                    Payment.type == PaymentType.REGISTRATION,
+                    Payment.type == "挂号费",
+                    Payment.type == "REGISTRATION",
+                )
+            )
+            .where(Payment.pres_id.is_(None))
+            .where(Payment.exam_id.is_(None))
+            .where(Payment.hosp_id.is_(None))
+            .where(Payment.time >= window_start)
+            .where(Payment.time <= window_end)
+            .order_by(Payment.time.desc(), Payment.payment_id.desc())
+        )
+        payment = (await session.execute(pay_stmt)).scalars().first()
+
+    # 若窗口内没找到，再退回到“最新挂号费”匹配
+    if not payment:
+        pay_stmt_latest = (
+            select(Payment)
+            .where(Payment.patient_id == patient.patient_id)
+            .where(
+                or_(
+                    Payment.type == PaymentType.REGISTRATION,
+                    Payment.type == "挂号费",
+                    Payment.type == "REGISTRATION",
+                )
+            )
+            .where(Payment.pres_id.is_(None))
+            .where(Payment.exam_id.is_(None))
+            .where(Payment.hosp_id.is_(None))
+            .order_by(Payment.time.desc(), Payment.payment_id.desc())
+        )
+        payment = (await session.execute(pay_stmt_latest)).scalars().first()
+
+    # 兜底：若由于历史数据/字段异常没匹配到，则按金额匹配最近一条挂号费
+    if not payment:
+        pay_stmt2 = (
+            select(Payment)
+            .where(Payment.patient_id == patient.patient_id)
+            .where(
+                or_(
+                    Payment.type == PaymentType.REGISTRATION,
+                    Payment.type == "挂号费",
+                    Payment.type == "REGISTRATION",
+                )
+            )
+            .where(Payment.amount == reg.fee)
+            .where(or_(Payment.status == '未缴费', Payment.status == '已缴费', Payment.status == '待退费'))
+            .order_by(Payment.time.desc(), Payment.payment_id.desc())
+        )
+        payment = (await session.execute(pay_stmt2)).scalars().first()
+
     reg.status = RegStatus.CANCELLED
     session.add(reg)
+
+    # 取消挂号：
+    # - 若挂号费未缴费：标记为“已取消”（保留记录，但不可再缴费）
+    # - 若已缴费：标记为“待退费”，前端显示退费按钮 + 铃铛提醒
+    if payment:
+        if getattr(payment, "status", "未缴费") == "已缴费":
+            payment.status = "待退费"
+            session.add(payment)
+        else:
+            payment.status = "已取消"
+            session.add(payment)
+
     await session.commit()
     await session.refresh(reg)
     return {"message": "挂号已取消", "registration": reg}
@@ -225,6 +410,7 @@ async def get_my_registrations(
             raise HTTPException(status_code=400, detail="请先完善个人信息档案")
 
         reg_stmt = select(Registration).where(Registration.patient_id == patient.patient_id)
+        await _apply_expired_registrations_for_patient(session, patient.patient_id)
         result = await session.execute(reg_stmt)
         return result.scalars().all()
     except HTTPException:
@@ -249,6 +435,8 @@ async def get_registration_detail(
     patient = (await session.execute(stmt)).scalars().first()
     if not patient:
         raise HTTPException(status_code=400, detail="请先完善个人信息档案")
+
+    await _apply_expired_registrations_for_patient(session, patient.patient_id)
 
     reg_stmt = select(Registration).where(Registration.reg_id == reg_id)
     registration = (await session.execute(reg_stmt)).scalars().first()
@@ -320,6 +508,9 @@ async def get_my_payments(
     if not patient:
         raise HTTPException(status_code=400, detail="请先完善个人信息档案")
 
+    # Ensure overdue registrations are marked expired and registration fee payment status updated.
+    await _apply_expired_registrations_for_patient(session, patient.patient_id)
+
     pay_stmt = select(Payment).where(Payment.patient_id == patient.patient_id)
     result = await session.execute(pay_stmt)
     pays = result.scalars().all()
@@ -331,6 +522,7 @@ async def get_my_payments(
             "amount": p.amount,
             "time": p.time,
             "patient_id": p.patient_id,
+            "reg_id": getattr(p, 'reg_id', None),
             "pres_id": p.pres_id,
             "exam_id": p.exam_id,
             "hosp_id": p.hosp_id,
@@ -407,6 +599,9 @@ async def pay_payment(
     if getattr(payment, 'status', None) == '已缴费':
         return {"message": "该项已缴费", "payment_id": payment.payment_id}
 
+    if getattr(payment, 'status', None) in ('已取消', '待退费', '已退费'):
+        raise HTTPException(status_code=400, detail="该项不可缴费")
+
     # 标记为已缴费
     payment.status = '已缴费'
     session.add(payment)
@@ -421,6 +616,39 @@ async def pay_payment(
     await session.commit()
     await session.refresh(payment)
     return {"message": "已缴费", "payment": {
+        "payment_id": payment.payment_id,
+        "status": payment.status
+    }}
+
+
+@router.post("/payments/{payment_id}/refund")
+async def refund_payment(
+    payment_id: int,
+    phone: str = Depends(get_current_user_phone),
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(Patient).where(Patient.phone == phone)
+    patient = (await session.execute(stmt)).scalars().first()
+    if not patient:
+        raise HTTPException(status_code=400, detail="请先完善个人信息档案")
+
+    payment = await session.get(Payment, payment_id)
+    if not payment:
+        raise HTTPException(status_code=404, detail="缴费记录不存在")
+    if payment.patient_id != patient.patient_id:
+        raise HTTPException(status_code=403, detail="无权操作此缴费记录")
+
+    if payment.type != PaymentType.REGISTRATION:
+        raise HTTPException(status_code=400, detail="仅挂号费支持退费")
+
+    if getattr(payment, 'status', None) != '待退费':
+        raise HTTPException(status_code=400, detail="该项当前不可退费")
+
+    payment.status = '已退费'
+    session.add(payment)
+    await session.commit()
+    await session.refresh(payment)
+    return {"message": "已退费", "payment": {
         "payment_id": payment.payment_id,
         "status": payment.status
     }}

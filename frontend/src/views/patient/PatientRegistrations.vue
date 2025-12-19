@@ -13,16 +13,35 @@
             <el-option v-for="dept in departments" :key="dept.dept_id" :label="dept.dept_name" :value="dept.dept_id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="医生">
-          <el-select v-model="regForm.doctor_id" placeholder="请选择医生" :disabled="!regForm.dept_id || doctorLoading">
-            <el-option v-for="doc in doctors" :key="doc.doctor_id" :label="`${doc.name} / ${doc.title}`" :value="doc.doctor_id" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="号别">
           <el-radio-group v-model="regForm.reg_type">
             <el-radio-button label="普通号" />
             <el-radio-button label="专家号" />
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="医生">
+          <el-select
+            v-model="regForm.doctor_id"
+            placeholder="请选择医生"
+            :disabled="!regForm.dept_id || !regForm.reg_type || doctorLoading"
+          >
+            <el-option
+              v-for="doc in filteredDoctors"
+              :key="doc.doctor_id"
+              :label="`${doc.name} / ${normalizeDoctorLevel(doc.title)}`"
+              :value="doc.doctor_id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="就诊日期">
+          <el-date-picker
+            v-model="regForm.visit_date"
+            type="date"
+            placeholder="请选择就诊日期"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            :disabled-date="disabledPastDates"
+          />
         </el-form-item>
         <el-form-item>
           <el-button type="success" :loading="regLoading" @click="submitRegistration">提交挂号</el-button>
@@ -37,14 +56,28 @@
           <small>查看当前挂号及受理状态</small>
         </div>
       </template>
+      <div class="filter-row">
+        <el-checkbox-group v-model="statusFilters" class="filter-group">
+          <el-checkbox label="ALL">全部</el-checkbox>
+          <el-checkbox label="排队中">排队中</el-checkbox>
+          <el-checkbox label="就诊中">就诊中</el-checkbox>
+          <el-checkbox label="已完成">已完成</el-checkbox>
+          <el-checkbox label="已取消">已取消</el-checkbox>
+        </el-checkbox-group>
+      </div>
       <div>
-        <el-table v-if="!loading && registrations.length" :data="registrations" stripe>
-          <el-table-column prop="reg_id" label="挂号号" width="100" />
+        <el-table v-if="!loading && filteredRegistrations.length" :data="filteredRegistrations" stripe>
+          <el-table-column prop="reg_id" label="序号" width="100" />
           <el-table-column prop="reg_type" label="号别" width="120" />
           <el-table-column prop="fee" label="费用" width="100">
             <template #default="scope">￥{{ formatFee(scope.row.fee) }}</template>
           </el-table-column>
-          <el-table-column prop="reg_date" label="挂号时间" />
+          <el-table-column label="挂号时间" min-width="260">
+            <template #default="scope">
+              <span>{{ formatDateTimeText(scope.row.reg_date) }}</span>
+              <span style="margin-left: 10px; color: var(--el-text-color-secondary)">就诊：{{ formatDateText(scope.row.visit_date) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="status" label="当前状态" width="120">
             <template #default="scope">{{ normalizeStatus(scope.row.status) }}</template>
           </el-table-column>
@@ -54,11 +87,17 @@
           <el-table-column label="操作" width="140">
             <template #default="scope">
               <el-button type="text" @click="openDetails(scope.row)">查看详情</el-button>
+              <el-button
+                v-if="isCancellable(scope.row)"
+                type="text"
+                :loading="cancelLoading[String(scope.row.reg_id)] === true"
+                @click="cancelMyRegistration(scope.row)"
+              >取消</el-button>
             </template>
           </el-table-column>
         </el-table>
 
-        <el-empty v-else-if="!loading && !registrations.length" description="暂无挂号记录" />
+        <el-empty v-else-if="!loading && !filteredRegistrations.length" description="暂无挂号记录" />
 
         <div v-else style="text-align:center; padding:16px">
           <el-spin />
@@ -69,7 +108,8 @@
     <el-dialog v-model="detailsDialogVisible" :title="`挂号 ${selectedRegistration?.reg_id} 详情`" width="720px">
         <div v-if="selectedRegistration">
           <p><strong>挂号号：</strong>{{ selectedRegistration.reg_id }}</p>
-          <p><strong>挂号时间：</strong>{{ selectedRegistration.reg_date }}</p>
+          <p><strong>挂号时间：</strong>{{ formatDateTimeText(selectedRegistration.reg_date) }}</p>
+          <p><strong>就诊日期：</strong>{{ formatDateText(selectedRegistration.visit_date) }}</p>
           <p><strong>号别：</strong>{{ selectedRegistration.reg_type }}</p>
           <p><strong>费用：</strong>￥{{ formatFee(selectedRegistration.fee) }}</p>
           <p><strong>当前状态：</strong>{{ normalizeStatus(selectedRegistration.status) }}</p>
@@ -152,12 +192,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   fetchDepartments,
   fetchDoctors,
   createRegistration,
+  cancelRegistration,
   fetchMyRegistrations,
   fetchDoctorById,
   fetchRegistrationDetail,
@@ -171,19 +212,39 @@ const doctors = ref<DoctorItem[]>([]);
 const doctorLoading = ref(false);
 const regLoading = ref(false);
 
+function getTodayYmd() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 const regForm = reactive({
   dept_id: undefined as number | undefined,
   doctor_id: undefined as number | undefined,
-  reg_type: "普通号"
+  reg_type: "普通号",
+  visit_date: getTodayYmd()
+});
+
+const filteredDoctors = computed(() => {
+  const type = regForm.reg_type;
+  const expectedLevel = type === "专家号" ? "专家医师" : "普通医师";
+  return doctors.value.filter((d) => normalizeDoctorLevel(d.title) === expectedLevel);
 });
 
 const registrations = ref<RegistrationItem[]>([]);
 const loading = ref(true);
 
+const cancelLoading = ref<Record<string, boolean>>({});
+
 const detailsDialogVisible = ref(false);
 const selectedRegistration = ref<RegistrationItem | null>(null);
 const doctorName = ref<string | null>(null);
 const doctorNames = ref<Record<string, string>>({});
+
+// 多选筛选：默认展示全部
+const statusFilters = ref<string[]>(["ALL"]);
 
 function openDetails(reg: RegistrationItem) {
   selectedRegistration.value = reg;
@@ -245,6 +306,19 @@ function formatFee(f: number | null | undefined) {
   return n.toFixed(2);
 }
 
+function normalizeDoctorLevel(value: string | null | undefined) {
+  if (!value) return "";
+  return value === "主治医师" ? "专家医师" : value;
+}
+
+watch(
+  () => regForm.reg_type,
+  () => {
+    // 号别切换后重置医生选择，避免选到不匹配的医生
+    regForm.doctor_id = undefined;
+  }
+);
+
 function normalizeStatus(s: string | null | undefined) {
   if (!s) return "未知";
   // accept both old and new value sets
@@ -256,13 +330,110 @@ function normalizeStatus(s: string | null | undefined) {
   return s;
 }
 
+const filteredRegistrations = computed(() => {
+  const filters = statusFilters.value;
+  if (!filters.length || filters.includes("ALL")) return registrations.value;
+  const set = new Set(filters);
+  return registrations.value.filter((r) => set.has(normalizeStatus(r.status)));
+});
+
+watch(
+  statusFilters,
+  (next, prev) => {
+    const nextHasAll = next.includes("ALL");
+    const prevHasAll = prev.includes("ALL");
+
+    // 用户勾选“全部”：清空其他选项，仅保留 ALL。
+    if (nextHasAll && !prevHasAll) {
+      statusFilters.value = ["ALL"];
+      return;
+    }
+
+    // 已经选了“全部”时，用户再勾选具体状态：自动取消“全部”，让筛选生效。
+    if (prevHasAll && nextHasAll && next.length > 1) {
+      statusFilters.value = next.filter((v) => v !== "ALL");
+      return;
+    }
+
+    // 如果用户把所有选项都取消了，则回退到“全部”。
+    if (!next.length) {
+      statusFilters.value = ["ALL"];
+      return;
+    }
+  },
+  { deep: true }
+);
+
+function isCancellable(reg: RegistrationItem) {
+  return normalizeStatus(reg.status) === "排队中";
+}
+
+function formatDateTimeText(value?: unknown) {
+  if (value === undefined || value === null) return "-";
+  return String(value).replace("T", " ");
+}
+
+function formatDateText(value?: unknown) {
+  if (value === undefined || value === null) return "-";
+  // backend may return YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss; normalize for display
+  return String(value).split("T")[0];
+}
+
+function disabledPastDates(time: Date) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(time);
+  d.setHours(0, 0, 0, 0);
+  return d < today;
+}
+
+async function cancelMyRegistration(reg: RegistrationItem) {
+  if (!isCancellable(reg)) return;
+  try {
+    await ElMessageBox.confirm(
+      `确认取消挂号 ${reg.reg_id} 吗？取消后需要重新挂号才能就诊。`,
+      "取消挂号",
+      { type: "warning", confirmButtonText: "确认取消", cancelButtonText: "暂不取消" }
+    );
+  } catch {
+    return;
+  }
+
+  const key = String(reg.reg_id);
+  cancelLoading.value[key] = true;
+  try {
+    await cancelRegistration(reg.reg_id);
+    ElMessage.success("挂号已取消");
+    if (selectedRegistration.value?.reg_id === reg.reg_id) {
+      // keep dialog open but refresh list/detail
+      await loadRegistrationDetail(reg.reg_id);
+    }
+    await loadRegistrations();
+  } catch (e: any) {
+    const msg = e?.response?.data?.detail || "取消挂号失败";
+    ElMessage.error(msg);
+  } finally {
+    cancelLoading.value[key] = false;
+  }
+}
+
 async function loadRegistrations() {
   loading.value = true;
   try {
     const { data } = await fetchMyRegistrations();
     console.debug("fetchMyRegistrations response:", data);
     // ensure we always set an array
-    registrations.value = Array.isArray(data) ? data : (data ? [data] : []);
+    const rows = Array.isArray(data) ? data : (data ? [data] : []);
+    // sort newest first (fallback to reg_id)
+    rows.sort((a, b) => {
+      const ta = Date.parse(a.reg_date as any);
+      const tb = Date.parse(b.reg_date as any);
+      const va = Number.isFinite(ta) ? ta : 0;
+      const vb = Number.isFinite(tb) ? tb : 0;
+      if (vb !== va) return vb - va;
+      return (b.reg_id ?? 0) - (a.reg_id ?? 0);
+    });
+    registrations.value = rows;
     // load doctor names for the fetched registrations
     await loadDoctorNamesFor(registrations.value);
   } catch (err: any) {
@@ -284,12 +455,15 @@ async function loadDepartments() {
 async function onDeptChange(deptId: number) {
   if (!deptId) {
     doctors.value = [];
+    regForm.doctor_id = undefined;
     return;
   }
   doctorLoading.value = true;
   try {
     const { data } = await fetchDoctors(deptId);
     doctors.value = data;
+    // 科室切换后重置医生选择
+    regForm.doctor_id = undefined;
   } finally {
     doctorLoading.value = false;
   }
@@ -300,9 +474,13 @@ async function submitRegistration() {
     ElMessage.warning("请选择医生");
     return;
   }
+  if (!regForm.visit_date) {
+    ElMessage.warning("请选择就诊日期");
+    return;
+  }
   regLoading.value = true;
   try {
-    await createRegistration({ doctor_id: regForm.doctor_id, reg_type: regForm.reg_type });
+    await createRegistration({ doctor_id: regForm.doctor_id, reg_type: regForm.reg_type, visit_date: regForm.visit_date });
     ElMessage.success("挂号成功，等待医生处理");
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail ?? "挂号失败");
@@ -314,6 +492,8 @@ async function submitRegistration() {
 }
 
 onMounted(() => {
+  // Ensure local date default (avoid UTC toISOString() off-by-one).
+  if (!regForm.visit_date) regForm.visit_date = getTodayYmd();
   loadDepartments();
   loadRegistrations();
 });
@@ -322,6 +502,16 @@ onMounted(() => {
 <style scoped>
 .mt-3 {
   margin-top: 16px;
+}
+
+.filter-row {
+  margin-bottom: 12px;
+}
+
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .card-header {

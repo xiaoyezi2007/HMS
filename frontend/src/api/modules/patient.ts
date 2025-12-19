@@ -29,11 +29,13 @@ export interface DoctorItem {
 export interface RegistrationPayload {
   doctor_id: number;
   reg_type: string;
+  visit_date?: string;
 }
 
 export interface RegistrationItem {
   reg_id: number;
   reg_date: string;
+  visit_date?: string;
   reg_type: string;
   fee: number;
   status: string;
@@ -67,6 +69,10 @@ export function createRegistration(payload: RegistrationPayload) {
 
 export function fetchMyRegistrations() {
   return http.get<RegistrationItem[]>("/api/registrations");
+}
+
+export function cancelRegistration(regId: number) {
+  return http.post(`/api/registrations/${regId}/cancel`);
 }
 
 export interface MedicalRecordItem {
@@ -142,4 +148,8 @@ export function fetchMyPayments() {
 
 export function payPayment(paymentId: number) {
   return http.post(`/api/payments/${paymentId}/pay`);
+}
+
+export function refundPayment(paymentId: number) {
+  return http.post(`/api/payments/${paymentId}/refund`);
 }

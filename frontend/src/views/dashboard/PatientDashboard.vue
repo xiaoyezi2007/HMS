@@ -49,16 +49,16 @@
                 <el-option v-for="dept in departments" :key="dept.dept_id" :label="dept.dept_name" :value="dept.dept_id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="医生">
-              <el-select v-model="regForm.doctor_id" placeholder="请选择医生" :disabled="!regForm.dept_id || doctorLoading">
-                <el-option v-for="doc in doctors" :key="doc.doctor_id" :label="`${doc.name} / ${doc.title}`" :value="doc.doctor_id" />
-              </el-select>
-            </el-form-item>
             <el-form-item label="号别">
               <el-radio-group v-model="regForm.reg_type">
                 <el-radio-button label="普通号" />
                 <el-radio-button label="专家号" />
               </el-radio-group>
+            </el-form-item>
+            <el-form-item label="医生">
+              <el-select v-model="regForm.doctor_id" placeholder="请选择医生" :disabled="!regForm.dept_id || !regForm.reg_type || doctorLoading">
+                <el-option v-for="doc in filteredDoctors" :key="doc.doctor_id" :label="`${doc.name} / ${normalizeDoctorLevel(doc.title)}`" :value="doc.doctor_id" />
+              </el-select>
             </el-form-item>
             <el-form-item>
               <el-button type="success" :loading="regLoading" @click="submitRegistration">提交挂号</el-button>
@@ -76,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import {
   createPatientProfile,
@@ -107,6 +107,24 @@ const regForm = reactive({
 });
 const regLoading = ref(false);
 
+function normalizeDoctorLevel(value: string | null | undefined) {
+  if (!value) return "";
+  return value === "主治医师" ? "专家医师" : value;
+}
+
+const filteredDoctors = computed(() => {
+  const type = regForm.reg_type;
+  const expectedLevel = type === "专家号" ? "专家医师" : "普通医师";
+  return doctors.value.filter((d) => normalizeDoctorLevel(d.title) === expectedLevel);
+});
+
+watch(
+  () => regForm.reg_type,
+  () => {
+    regForm.doctor_id = undefined;
+  }
+);
+
 async function loadDepartments() {
   const { data } = await fetchDepartments();
   departments.value = data;
@@ -115,12 +133,14 @@ async function loadDepartments() {
 async function onDeptChange(deptId: number) {
   if (!deptId) {
     doctors.value = [];
+    regForm.doctor_id = undefined;
     return;
   }
   doctorLoading.value = true;
   try {
     const { data } = await fetchDoctors(deptId);
     doctors.value = data;
+    regForm.doctor_id = undefined;
   } finally {
     doctorLoading.value = false;
   }

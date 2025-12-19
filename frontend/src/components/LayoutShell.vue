@@ -22,6 +22,32 @@
             </el-breadcrumb>
           </div>
           <div class="header-right">
+            <el-popover
+              v-if="auth.currentRole === '患者'"
+              placement="bottom-end"
+              trigger="click"
+              width="260"
+              @show="onOpenNotice"
+            >
+              <template #reference>
+                <el-badge :is-dot="notice.notifications.length > 0">
+                  <el-button link class="notice-btn" aria-label="缴费提醒">
+                    <Bell />
+                  </el-button>
+                </el-badge>
+              </template>
+
+              <div class="notice-panel">
+                <div class="notice-title">提醒</div>
+                <div v-if="notice.notifications.length" class="notice-list">
+                  <div v-for="n in notice.notifications" :key="n.key" class="notice-item">
+                    {{ n.message }}
+                  </div>
+                </div>
+                <el-empty v-else description="暂无通知" />
+              </div>
+            </el-popover>
+
             <el-tag type="success" effect="dark">{{ auth.currentRole || "未分配角色" }}</el-tag>
             <el-divider direction="vertical" />
             <span class="phone">{{ auth.phone || "未绑定手机号" }}</span>
@@ -39,9 +65,10 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { House, User, FirstAidKit, Tickets, List, Management, Document, CreditCard, View, Coin } from "@element-plus/icons-vue";
+import { House, User, FirstAidKit, Tickets, List, Management, Document, CreditCard, View, Coin, Bell } from "@element-plus/icons-vue";
 import { useAuthStore } from "../stores/auth";
 import { fetchNurseProfile } from "../api/modules/nurse";
+import { useNotificationStore } from "../stores/notifications";
 
 interface MenuItem {
   path: string;
@@ -54,6 +81,7 @@ interface MenuItem {
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
+const notice = useNotificationStore();
 
 const menuConfig: MenuItem[] = [
   { path: "/workspace/overview", label: "系统总览", roles: ["医生", "护士", "药师", "管理员"], icon: House },
@@ -135,6 +163,24 @@ watch(
     void syncHeadNurseStatus();
   }
 );
+
+watch(
+  () => [auth.currentRole, auth.isAuthenticated, auth.phone],
+  () => {
+    if (auth.isAuthenticated && auth.currentRole === "患者") {
+      notice.startPolling(15000);
+    } else {
+      notice.stopPolling();
+      notice.clearNotifications();
+    }
+  },
+  { immediate: true }
+);
+
+function onOpenNotice() {
+  // Ensure latest payments are reflected when user opens the popover.
+  void notice.syncPaymentsOnce();
+}
 </script>
 
 <style scoped>
@@ -191,6 +237,32 @@ watch(
   align-items: center;
   gap: 8px;
   color: #334155;
+}
+
+.notice-btn {
+  padding: 4px;
+}
+
+.notice-btn :deep(svg) {
+  width: 18px;
+  height: 18px;
+}
+
+.notice-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.notice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notice-item {
+  font-size: 13px;
+  line-height: 18px;
+  word-break: break-word;
 }
 
 .phone {

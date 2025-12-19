@@ -17,6 +17,7 @@ class RegStatus(str, Enum):
     IN_PROGRESS = "就诊中"
     FINISHED = "已完成"
     CANCELLED = "已取消"
+    EXPIRED = "已过期"
 
 
 class RegType(str, Enum):
@@ -39,7 +40,7 @@ class Doctor(SQLModel, table=True):
     doctor_id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=50)
     gender: Gender
-    title: str = Field(max_length=50, description="职称：主任医师/副主任医师")
+    title: str = Field(max_length=50, description="医生级别：专家医师/普通医师")
     phone: str = Field(max_length=11)
 
     # 外键：所属科室
@@ -65,6 +66,7 @@ class Patient(SQLModel, table=True):
 class Registration(SQLModel, table=True):
     reg_id: Optional[int] = Field(default=None, primary_key=True)
     reg_date: datetime = Field(default_factory=datetime.now)
+    visit_date: date = Field(default_factory=date.today, description="就诊日期（具体到日）")
     reg_type: RegType = Field(default=RegType.NORMAL)
     fee: float = Field(default=0.0)
     status: RegStatus = Field(default=RegStatus.WAITING)
@@ -185,6 +187,7 @@ class Payment(SQLModel, table=True):
 
     # 关联外键（可选）
     patient_id: int = Field(foreign_key="patient.patient_id")
+    reg_id: Optional[int] = Field(default=None, foreign_key="registration.reg_id")
     pres_id: Optional[int] = Field(default=None, foreign_key="prescription.pres_id")
     exam_id: Optional[int] = Field(default=None, foreign_key="examination.exam_id")
     hosp_id: Optional[int] = Field(default=None, foreign_key="hospitalization.hosp_id")

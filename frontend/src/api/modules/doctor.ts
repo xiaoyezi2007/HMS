@@ -3,6 +3,7 @@ import http from "../http";
 export interface RegistrationItem {
   reg_id: number;
   reg_date: string;
+  visit_date?: string;
   reg_type: string;
   fee: number;
   status: string;

@@ -19,7 +19,12 @@
             ￥{{ scope.row.fee.toFixed(2) }}
           </template>
         </el-table-column>
-        <el-table-column prop="reg_date" label="挂号时间" />
+        <el-table-column label="挂号时间" min-width="260">
+          <template #default="scope">
+            <span>{{ formatDateTimeText(scope.row.reg_date) }}</span>
+            <span style="margin-left: 10px; color: var(--el-text-color-secondary)">就诊：{{ formatDateText(scope.row.visit_date) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="120">
           <template #default="scope">
             <el-button v-if="scope.row.status === '排队中'" size="small" type="info" @click="onStart(scope.row)">开始办理</el-button>
@@ -65,6 +70,16 @@ const router = useRouter();
 const patientDialogVisible = ref(false);
 const patientLoading = ref(false);
 const patientDetail = ref<PatientProfileResponse | null>(null);
+
+function formatDateTimeText(value?: unknown) {
+  if (value === undefined || value === null) return "-";
+  return String(value).replace("T", " ");
+}
+
+function formatDateText(value?: unknown) {
+  if (value === undefined || value === null) return "-";
+  return String(value).split("T")[0];
+}
 
 async function loadSchedule() {
   const { data } = await fetchDoctorSchedule();

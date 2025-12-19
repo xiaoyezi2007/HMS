@@ -9,7 +9,9 @@
       </template>
       <div>
         <el-table v-if="!loading && records.length" :data="records" style="width: 100%" :row-class-name="rowClassName">
-          <el-table-column prop="create_time" label="时间" width="180" />
+          <el-table-column prop="create_time" label="时间" width="180">
+            <template #default="{ row }">{{ formatDateTimeText(row.create_time) }}</template>
+          </el-table-column>
           <el-table-column prop="complaint" label="主诉" />
           <el-table-column prop="diagnosis" label="诊断" />
           <el-table-column prop="suggestion" label="建议" />
@@ -35,6 +37,11 @@ const records = ref<MedicalRecordItem[]>([]);
 const loading = ref(true);
 const route = useRoute();
 const highlightRegId = Number(route.query.reg_id || 0) || null;
+
+function formatDateTimeText(value?: unknown) {
+  if (value === undefined || value === null) return "-";
+  return String(value).replace("T", " ");
+}
 
 function rowClassName({ row }: { row: MedicalRecordItem }) {
   if (!highlightRegId) return "";

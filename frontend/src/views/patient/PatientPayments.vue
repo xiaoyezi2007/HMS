@@ -13,11 +13,29 @@
           <el-table-column prop="amount" label="金额" width="100">
             <template #default="{ row }">¥{{ row.amount }}</template>
           </el-table-column>
-          <el-table-column prop="time" label="时间" />
+          <el-table-column prop="time" label="时间">
+            <template #default="{ row }">{{ formatDateTimeText(row.time) }}</template>
+          </el-table-column>
           <el-table-column prop="status" label="状态" width="100" />
           <el-table-column label="操作" width="140">
             <template #default="{ row }">
-              <el-button size="small" type="primary" @click="doPay(row)" :disabled="row.status === '已缴费'">缴费</el-button>
+              <el-button
+                v-if="canPay(row)"
+                size="small"
+                type="primary"
+                @click="doPay(row)"
+              >
+                缴费
+              </el-button>
+              <el-button
+                v-else-if="canRefund(row)"
+                size="small"
+                type="warning"
+                @click="doRefund(row)"
+              >
+                退费
+              </el-button>
+              <span v-else>-</span>
             </template>
           </el-table-column>
           <el-table-column label="附加信息">
@@ -25,7 +43,7 @@
               <div v-if="row.exam_info">
                 <strong>检查：</strong>{{ row.exam_info.type }}
                 <div v-if="row.exam_info.result">结果：{{ row.exam_info.result }}</div>
-                <div v-if="row.exam_info.date">时间：{{ new Date(row.exam_info.date).toLocaleString() }}</div>
+                <div v-if="row.exam_info.date">时间：{{ formatDateTimeText(row.exam_info.date) }}</div>
               </div>
               <div v-else-if="row.prescription_info">
                 <strong>处方：</strong>
@@ -58,15 +76,32 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { fetchMyPayments, payPayment } from '@/api/modules/patient'
+import { fetchMyPayments, payPayment, refundPayment } from '../../api/modules/patient'
 import { ElMessage } from 'element-plus'
 
 const payments = ref<Array<any>>([])
 
+function formatDateTimeText(value?: unknown) {
+  if (value === undefined || value === null) return '-'
+  return String(value).replace('T', ' ')
+}
+
+function parseTime(value: unknown): number {
+  if (typeof value !== 'string') return 0
+  const t = Date.parse(value)
+  return Number.isFinite(t) ? t : 0
+}
+
 async function load() {
   try {
     const res = await fetchMyPayments()
-    payments.value = res.data || []
+    const list = Array.isArray(res.data) ? res.data : []
+    payments.value = list.sort((a: any, b: any) => {
+      const tb = parseTime(b?.time)
+      const ta = parseTime(a?.time)
+      if (tb !== ta) return tb - ta
+      return (b?.payment_id ?? 0) - (a?.payment_id ?? 0)
+    })
   } catch (e) {
     console.error(e)
     ElMessage.error('获取缴费记录失败')
@@ -85,10 +120,30 @@ async function doPay(row: any) {
   }
 }
 
+async function doRefund(row: any) {
+  try {
+    await refundPayment(row.payment_id)
+    ElMessage.success('退费成功')
+    await load()
+  } catch (e: any) {
+    console.error(e)
+    const msg = e?.response?.data?.detail || '退费失败'
+    ElMessage.error(msg)
+  }
+}
+
+function canPay(row: any) {
+  return row?.status === '未缴费'
+}
+
+function canRefund(row: any) {
+  return row?.type === '挂号费' && row?.status === '待退费'
+}
+
 function formatDate(value?: string) {
   if (!value) return '-'
   try {
-    return new Date(value).toLocaleString()
+    return formatDateTimeText(value)
   } catch {
     return value
   }

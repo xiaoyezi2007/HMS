@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from sqlalchemy import text
 import asyncio
+import re
 
 # 1. 定位项目根目录
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -61,6 +62,77 @@ async def init_db():
                     val = got.scalar()
                 if val == 1:
                     await conn.run_sync(SQLModel.metadata.create_all)
+
+                    # ---- lightweight migrations (MySQL) ----
+                    # Add visit_date column to registration table if missing.
+                    try:
+                        exists = await conn.execute(
+                            text(
+                                """
+                                SELECT COUNT(*)
+                                FROM information_schema.columns
+                                WHERE table_schema = DATABASE()
+                                  AND table_name = 'registration'
+                                  AND column_name = 'visit_date'
+                                """
+                            )
+                        )
+                        if (exists.scalar() or 0) == 0:
+                            await conn.execute(text("ALTER TABLE registration ADD COLUMN visit_date DATE NOT NULL DEFAULT (CURRENT_DATE)"))
+                    except Exception:
+                        # best-effort: don't block app startup if migration fails
+                        pass
+
+                    # Extend registration.status ENUM to include EXPIRED if needed.
+                    try:
+                        col = await conn.execute(
+                            text(
+                                """
+                                SELECT COLUMN_TYPE
+                                FROM information_schema.columns
+                                WHERE table_schema = DATABASE()
+                                  AND table_name = 'registration'
+                                  AND column_name = 'status'
+                                """
+                            )
+                        )
+                        column_type = col.scalar() or ""
+                        if isinstance(column_type, str) and column_type.lower().startswith("enum("):
+                            values = re.findall(r"'([^']*)'", column_type)
+                            # Decide whether DB stores enum names (WAITING/...) or Chinese values.
+                            wants_name = any(v in ("WAITING", "IN_PROGRESS", "FINISHED", "CANCELLED") for v in values)
+                            expired_token = "EXPIRED" if wants_name else "已过期"
+                            if expired_token not in values:
+                                new_values = values + [expired_token]
+                                # Preserve default when possible
+                                default_token = "WAITING" if "WAITING" in values else ("排队中" if "排队中" in values else (values[0] if values else expired_token))
+                                enum_sql = ",".join([f"'{v}'" for v in new_values])
+                                await conn.execute(
+                                    text(
+                                        f"ALTER TABLE registration MODIFY COLUMN status ENUM({enum_sql}) NOT NULL DEFAULT '{default_token}'"
+                                    )
+                                )
+                    except Exception:
+                        pass
+
+                    # Add reg_id column to payment table if missing.
+                    try:
+                        exists = await conn.execute(
+                            text(
+                                """
+                                SELECT COUNT(*)
+                                FROM information_schema.columns
+                                WHERE table_schema = DATABASE()
+                                  AND table_name = 'payment'
+                                  AND column_name = 'reg_id'
+                                """
+                            )
+                        )
+                        if (exists.scalar() or 0) == 0:
+                            await conn.execute(text("ALTER TABLE payment ADD COLUMN reg_id INTEGER NULL"))
+                    except Exception:
+                        pass
+
                     # 释放锁
                     await conn.execute(text("SELECT RELEASE_LOCK('hms_init_db_lock')"))
                 else:

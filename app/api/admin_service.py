@@ -71,9 +71,11 @@ async def create_staff_account(
         if not payload.doctor_gender:
             raise HTTPException(status_code=400, detail="请提供医生性别")
         if not payload.doctor_title:
-            raise HTTPException(status_code=400, detail="请提供医生职称")
-        if payload.doctor_title not in ALLOWED_DOCTOR_TITLES:
-            raise HTTPException(status_code=400, detail="医生职称仅支持主治医师或普通医师")
+            raise HTTPException(status_code=400, detail="请提供医生级别")
+
+        doctor_title = "专家医师" if payload.doctor_title == "主治医师" else payload.doctor_title
+        if doctor_title not in ALLOWED_DOCTOR_TITLES:
+            raise HTTPException(status_code=400, detail="医生级别仅支持专家医师或普通医师")
 
         dept = (await session.execute(select(Department).where(Department.dept_id == payload.dept_id))).scalars().first()
         if not dept:
@@ -111,14 +113,14 @@ async def create_staff_account(
         if doctor:
             doctor.name = payload.doctor_name
             doctor.gender = gender_value
-            doctor.title = payload.doctor_title
+            doctor.title = doctor_title
             doctor.dept_id = payload.dept_id
             session.add(doctor)
         else:
             doctor = Doctor(
                 name=payload.doctor_name,
                 gender=gender_value,
-                title=payload.doctor_title,
+                title=doctor_title,
                 phone=payload.phone,
                 dept_id=payload.dept_id
             )
@@ -198,8 +200,9 @@ async def update_doctor_title(
     _: UserAccount = Depends(get_current_admin_user),
     session: AsyncSession = Depends(get_session)
 ):
+    # payload.title 已在 schema validator 中做了兼容与归一化（主治医师 -> 专家医师）
     if payload.title not in ALLOWED_DOCTOR_TITLES:
-        raise HTTPException(status_code=400, detail="医生职称仅支持主治医师或普通医师")
+        raise HTTPException(status_code=400, detail="医生级别仅支持专家医师或普通医师")
 
     doctor = (await session.execute(select(Doctor).where(Doctor.doctor_id == doctor_id))).scalars().first()
     if not doctor:

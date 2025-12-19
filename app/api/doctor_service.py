@@ -1,7 +1,9 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, SQLModel
 from typing import List
@@ -66,6 +68,43 @@ async def get_my_schedule(
         doctor: Doctor = Depends(get_current_doctor),
         session: AsyncSession = Depends(get_session)
 ):
+    # Auto-expire overdue registrations (WAITING and visit_date has passed)
+    try:
+        today = date.today()
+        overdue_stmt = select(Registration).where(
+            Registration.doctor_id == doctor.doctor_id,
+            Registration.status == RegStatus.WAITING,
+            Registration.visit_date < today,
+        )
+        overdue_regs = (await session.execute(overdue_stmt)).scalars().all()
+        for reg in overdue_regs:
+            reg.status = RegStatus.EXPIRED
+            session.add(reg)
+
+            pay_stmt = (
+                select(Payment)
+                .where(Payment.patient_id == reg.patient_id)
+                .where(
+                    or_(
+                        Payment.type == PaymentType.REGISTRATION,
+                        Payment.type == "挂号费",
+                        Payment.type == "REGISTRATION",
+                    )
+                )
+                .where(Payment.reg_id == reg.reg_id)
+                .order_by(Payment.time.desc(), Payment.payment_id.desc())
+            )
+            pay = (await session.execute(pay_stmt)).scalars().first()
+            if pay and getattr(pay, "status", "未缴费") != "已缴费":
+                pay.status = "已取消"
+                session.add(pay)
+
+        if overdue_regs:
+            await session.commit()
+    except Exception:
+        # best-effort; schedule should still load
+        pass
+
     # 返回排队中和办理中的挂号，医生在完成办理后挂号会被标记为已结束并从列表中消失
     stmt = select(Registration).where(
         Registration.doctor_id == doctor.doctor_id,
@@ -391,15 +430,6 @@ async def start_handling(
     session.add(registration)
     await session.commit()
     await session.refresh(registration)
-    # 在开始办理时创建挂号缴费（挂号费）——金额等于挂号单的 fee
-    # 依靠 Payment.time 记录即可区分多次缴费请求，无需再按金额防重复
-    payment = Payment(
-        type=PaymentType.REGISTRATION,
-        amount=registration.fee,
-        patient_id=registration.patient_id
-    )
-    session.add(payment)
-    await session.commit()
     return registration
 
 

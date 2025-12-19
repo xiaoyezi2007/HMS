@@ -16,6 +16,7 @@ class PatientCreate(SQLModel):
 class RegistrationCreate(SQLModel):
     doctor_id: int
     reg_type: RegType = RegType.NORMAL
+    visit_date: date = date.today()
 
 # --- 医生写病历 ---
 class MedicalRecordCreate(SQLModel):
@@ -58,7 +59,7 @@ class PaymentRead(SQLModel):
     status: str
 
 
-ALLOWED_DOCTOR_TITLES = {"主治医师", "普通医师"}
+ALLOWED_DOCTOR_TITLES = {"专家医师", "普通医师", "主治医师"}
 
 
 class DoctorTitleUpdate(SQLModel):
@@ -67,8 +68,10 @@ class DoctorTitleUpdate(SQLModel):
     @field_validator("title")
     @classmethod
     def validate_title(cls, value: str) -> str:
+        if value == "主治医师":
+            value = "专家医师"
         if value not in ALLOWED_DOCTOR_TITLES:
-            raise ValueError("医生职称仅支持主治医师或普通医师")
+            raise ValueError("医生级别仅支持专家医师或普通医师")
         return value
 
 

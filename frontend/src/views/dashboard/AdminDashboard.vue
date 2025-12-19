@@ -123,8 +123,8 @@
             </el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="isDoctorRole" label="医生职称">
-          <el-select v-model="createForm.doctor_title" placeholder="请选择职称">
+        <el-form-item v-if="isDoctorRole" label="医生级别">
+          <el-select v-model="createForm.doctor_title" placeholder="请选择医生级别">
             <el-option v-for="option in doctorTitleOptions" :key="option" :label="option" :value="option" />
           </el-select>
         </el-form-item>
@@ -161,7 +161,7 @@
       <template #header>
         <div class="card-header">
           <span>医护账号管理</span>
-          <small>统一查看现有账号，并在表格中完成职称与护士长设置</small>
+          <small>统一查看现有账号，并在表格中完成医生级别与护士长设置</small>
         </div>
       </template>
       <div class="management-toolbar">
@@ -192,7 +192,7 @@
             {{ scope.row.register_time ? formatDate(scope.row.register_time) : "-" }}
           </template>
         </el-table-column>
-        <el-table-column label="医生职称" min-width="200">
+        <el-table-column label="医生级别" min-width="200">
           <template #default="scope">
             <el-select
               v-if="scope.row.doctorProfile"
@@ -284,7 +284,7 @@ const roleOptions: RoleOption[] = [
   { label: "药师", value: "药师" }
 ];
 
-const doctorTitleOptions = ["普通医师", "主治医师"];
+const doctorTitleOptions = ["普通医师", "专家医师"];
 const genderOptions = [
   { label: "男", value: "男" },
   { label: "女", value: "女" }
@@ -539,7 +539,7 @@ function handleCreate() {
       return;
     }
     if (!createForm.doctor_title) {
-      ElMessage.warning("请选择医生职称");
+      ElMessage.warning("请选择医生级别");
       return;
     }
     if (!createForm.dept_id) {
@@ -584,6 +584,11 @@ function handleCreate() {
     });
 }
 
+function normalizeDoctorLevel(value: string | null | undefined) {
+  if (!value) return "";
+  return value === "主治医师" ? "专家医师" : value;
+}
+
 function handleCreateDepartment() {
   if (!deptForm.dept_name.trim()) {
     ElMessage.warning("请填写科室名称");
@@ -603,9 +608,14 @@ function handleCreateDepartment() {
       const message = error?.response?.data?.detail;
       ElMessage.error(message || "新增科室失败");
     })
-    .finally(() => {
-      deptCreating.value = false;
-    });
+    .then(
+      () => {
+        deptCreating.value = false;
+      },
+      () => {
+        deptCreating.value = false;
+      }
+    );
 }
 
 function handleCreateWard() {
@@ -636,9 +646,14 @@ function handleCreateWard() {
       const message = error?.response?.data?.detail;
       ElMessage.error(message || "新增病房失败");
     })
-    .finally(() => {
-      wardCreating.value = false;
-    });
+    .then(
+      () => {
+        wardCreating.value = false;
+      },
+      () => {
+        wardCreating.value = false;
+      }
+    );
 }
 
 function handleDelete(phone: string) {
@@ -676,7 +691,10 @@ function loadDoctors() {
   doctorLoading.value = true;
   return fetchDoctors()
     .then(({ data }) => {
-      doctorList.value = data;
+      doctorList.value = (data || []).map((doctor) => ({
+        ...doctor,
+        title: normalizeDoctorLevel((doctor as any).title)
+      }));
     })
     .catch((error: any) => {
       const message = error && error.response && error.response.data && error.response.data.detail;
@@ -691,10 +709,10 @@ function handleDoctorTitleSelect(doctorId: number | undefined, titleValue: unkno
   if (!doctorId) {
     return;
   }
-  const nextTitle = typeof titleValue === "string" ? titleValue : "主治医师";
+  const nextTitle = normalizeDoctorLevel(typeof titleValue === "string" ? titleValue : "专家医师");
   updateDoctorTitle(doctorId, nextTitle)
     .then(() => {
-      ElMessage.success("职称已更新");
+      ElMessage.success("医生级别已更新");
       return loadDoctors();
     })
     .catch((error: any) => {
