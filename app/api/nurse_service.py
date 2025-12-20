@@ -20,6 +20,7 @@ from app.models.hospital import (
     Patient,
     Payment,
     PaymentType,
+    NurseTask,
 )
 from app.schemas.nurse import (
     ScheduleRead,
@@ -59,6 +60,22 @@ async def get_head_nurse(
     if not nurse.is_head_nurse:
         raise HTTPException(status_code=403, detail="仅护士长可以执行该操作")
     return nurse
+
+
+async def assign_tasks_to_ward(session: AsyncSession, ward_id: int, nurse_id: int) -> None:
+    hosp_stmt = select(Hospitalization.hosp_id).where(
+        Hospitalization.ward_id == ward_id,
+        Hospitalization.status == "在院",
+    )
+    hosp_ids = (await session.execute(hosp_stmt)).scalars().all()
+    if not hosp_ids:
+        return
+
+    task_stmt = select(NurseTask).where(NurseTask.hosp_id.in_(hosp_ids))
+    tasks = (await session.execute(task_stmt)).scalars().all()
+    for task in tasks:
+        task.nurse_id = nurse_id
+        session.add(task)
 
 
 @router.get("/profile", response_model=NurseProfile)
@@ -219,6 +236,7 @@ async def upsert_schedule_slot(
         await session.commit()
         return {"detail": "排班已更新"}
 
+    target_nurse_id = payload.nurse_ids[0]
     for nurse_id in payload.nurse_ids:
         session.add(NurseSchedule(
             nurse_id=nurse_id,
@@ -226,6 +244,8 @@ async def upsert_schedule_slot(
             start_time=payload.start_time,
             end_time=payload.end_time
         ))
+
+    await assign_tasks_to_ward(session, payload.ward_id, target_nurse_id)
 
     await session.commit()
     return {"detail": "排班已更新"}
@@ -251,6 +271,7 @@ async def auto_generate_schedules(
         session: AsyncSession = Depends(get_session)
 ):
     start_time = payload.start_time or datetime.now()
+    now = datetime.now()
     shift_hours = payload.shift_hours or 8
     shift_count = payload.shift_count or 3
 
@@ -282,6 +303,7 @@ async def auto_generate_schedules(
     await session.execute(del_stmt)
 
     cursor = 0
+    first_assignment = {}
     for shift_index in range(shift_count):
         slot_time = start_time + timedelta(hours=shift_hours * shift_index)
         slot_end = slot_time + timedelta(hours=shift_hours)
@@ -294,6 +316,12 @@ async def auto_generate_schedules(
                 end_time=slot_end
             ))
             cursor += 1
+
+            if ward.ward_id not in first_assignment and (slot_time <= now < slot_end or slot_time >= now):
+                first_assignment[ward.ward_id] = nurse.nurse_id
+
+    for ward_id, nurse_id in first_assignment.items():
+        await assign_tasks_to_ward(session, ward_id, nurse_id)
 
     await session.commit()
     total_records = len(wards) * shift_count

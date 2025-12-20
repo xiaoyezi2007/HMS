@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -26,9 +26,12 @@ from app.models.hospital import (
     Ward,
     Hospitalization,
     ExamResult,
+    Nurse,
+    NurseSchedule,
+    NurseTask,
 )
 from app.schemas.hospital import MedicalRecordCreate
-from app.schemas.hospital import ExaminationCreate
+from app.schemas.hospital import ExaminationCreate, NurseTaskCreate
 import random
 
 router = APIRouter()
@@ -60,6 +63,39 @@ def format_datetime(dt):
     if not dt:
         return ""
     return dt.strftime("%Y-%m-%d %H:%M")
+
+
+async def pick_nurse_for_ward(session: AsyncSession, ward_id: int) -> Nurse:
+    now = datetime.now()
+    scheduled_stmt = (
+        select(Nurse)
+        .join(NurseSchedule, NurseSchedule.nurse_id == Nurse.nurse_id)
+        .where(NurseSchedule.ward_id == ward_id)
+        .where(NurseSchedule.start_time <= now, NurseSchedule.end_time >= now)
+        .order_by(Nurse.is_head_nurse.desc(), NurseSchedule.start_time.desc())
+    )
+    scheduled_nurse = (await session.execute(scheduled_stmt)).scalars().first()
+    if scheduled_nurse:
+        return scheduled_nurse
+
+    recent_stmt = (
+        select(Nurse)
+        .join(NurseSchedule, NurseSchedule.nurse_id == Nurse.nurse_id)
+        .where(NurseSchedule.ward_id == ward_id)
+        .order_by(NurseSchedule.end_time.desc())
+    )
+    recent_nurse = (await session.execute(recent_stmt)).scalars().first()
+    if recent_nurse:
+        return recent_nurse
+
+    head_nurse = (await session.execute(select(Nurse).where(Nurse.is_head_nurse == True).order_by(Nurse.nurse_id))).scalars().first()
+    if head_nurse:
+        return head_nurse
+
+    any_nurse = (await session.execute(select(Nurse).order_by(Nurse.nurse_id))).scalars().first()
+    if not any_nurse:
+        raise HTTPException(status_code=400, detail="暂无可分配的护士")
+    return any_nurse
 
 
 # --- 接口 1: 医生排班 ---
@@ -154,7 +190,6 @@ async def create_medical_record(
     await session.commit()
     await session.refresh(new_record)
     return new_record
-
 
 # --- 新：为病历添加检查记录（医生操作，会随机生成结果） ---
 @router.post("/consultations/{reg_id}/exams", response_model=Examination)
@@ -257,6 +292,69 @@ async def list_department_wards(
             "is_full": occupied >= ward.bed_count
         })
     return out
+
+
+@router.get("/inpatients")
+async def list_my_inpatients(
+    doctor: Doctor = Depends(get_current_doctor),
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = (
+        select(Hospitalization, Ward, MedicalRecord, Registration, Patient)
+        .join(Ward, Hospitalization.ward_id == Ward.ward_id)
+        .join(MedicalRecord, Hospitalization.record_id == MedicalRecord.record_id)
+        .join(Registration, MedicalRecord.reg_id == Registration.reg_id)
+        .join(Patient, Registration.patient_id == Patient.patient_id)
+        .where(Hospitalization.status == "在院")
+        .where(Hospitalization.hosp_doctor_id == doctor.doctor_id)
+    )
+
+    rows = await session.execute(stmt)
+    now = datetime.now()
+    payload = []
+    for hosp, ward, _, reg, patient in rows.all():
+        stay_hours = max((now - hosp.in_date).total_seconds() / 3600, 0.0)
+        payload.append({
+            "hosp_id": hosp.hosp_id,
+            "patient_id": patient.patient_id,
+            "patient_name": patient.name,
+            "ward_id": ward.ward_id,
+            "ward_type": ward.type,
+            "in_date": hosp.in_date,
+            "stay_hours": stay_hours,
+            "reg_id": reg.reg_id,
+        })
+    return payload
+
+
+@router.post("/hospitalizations/{hosp_id}/tasks")
+async def create_nurse_task(
+    hosp_id: int,
+    payload: NurseTaskCreate,
+    doctor: Doctor = Depends(get_current_doctor),
+    session: AsyncSession = Depends(get_session)
+):
+    hospitalization = await session.get(Hospitalization, hosp_id)
+    if not hospitalization:
+        raise HTTPException(status_code=404, detail="住院记录不存在")
+    if hospitalization.hosp_doctor_id != doctor.doctor_id:
+        raise HTTPException(status_code=403, detail="您只能为自己负责的住院患者添加护理任务")
+    if hospitalization.status != "在院":
+        raise HTTPException(status_code=400, detail="仅能为在院患者添加护理任务")
+    if not hospitalization.ward_id:
+        raise HTTPException(status_code=400, detail="该住院记录缺少病房信息")
+
+    nurse = await pick_nurse_for_ward(session, hospitalization.ward_id)
+    task = NurseTask(
+        type=payload.type,
+        time=payload.time,
+        nurse_id=nurse.nurse_id,
+        hosp_id=hosp_id
+    )
+    session.add(task)
+    await session.commit()
+    await session.refresh(task)
+    return task
 
 # --- 新：根据挂号ID查询对应病历（仅限接诊该挂号的医生） ---
 @router.get("/consultations/{reg_id}/record", response_model=MedicalRecord)

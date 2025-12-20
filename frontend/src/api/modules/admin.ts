@@ -35,6 +35,7 @@ export interface DepartmentCreatePayload {
 }
 
 export interface WardCreatePayload {
+  ward_id: number;
   dept_id: number;
   bed_count: number;
   type: string;

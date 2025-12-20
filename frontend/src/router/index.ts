@@ -5,6 +5,7 @@ import LoginView from "../views/LoginView.vue";
 import LayoutShell from "../components/LayoutShell.vue";
 import OverviewView from "../views/dashboard/OverviewView.vue";
 import DoctorDashboard from "../views/dashboard/DoctorDashboard.vue";
+import DoctorInpatients from "../views/dashboard/DoctorInpatients.vue";
 import NurseDashboard from "../views/dashboard/NurseDashboard.vue";
 import PharmacyDashboard from "../views/dashboard/PharmacyDashboard.vue";
 import AdminDashboard from "../views/dashboard/AdminDashboard.vue";
@@ -89,6 +90,12 @@ const router = createRouter({
           path: "workspace/doctor",
           name: "doctor",
           component: DoctorDashboard,
+          meta: { roles: ["医生"] }
+        },
+        {
+          path: "workspace/doctor/inpatients",
+          name: "doctor-inpatients",
+          component: DoctorInpatients,
           meta: { roles: ["医生"] }
         },
         {

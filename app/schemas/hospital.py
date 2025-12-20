@@ -37,6 +37,11 @@ class ExaminationRead(SQLModel):
     record_id: int
 
 
+class NurseTaskCreate(SQLModel):
+    type: str
+    time: datetime
+
+
 class PaymentCreate(SQLModel):
     type: str
     amount: float
@@ -100,9 +105,17 @@ class DepartmentCreate(SQLModel):
 
 
 class WardCreate(SQLModel):
+    ward_id: int
     dept_id: int
     type: str
     bed_count: int
+
+    @field_validator("ward_id")
+    @classmethod
+    def validate_ward_id(cls, value: int) -> int:
+        if value < 101 or value > 999:
+            raise ValueError("房间号需在 101-999 之间")
+        return value
 
     @field_validator("bed_count")
     @classmethod

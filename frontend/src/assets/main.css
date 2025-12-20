@@ -28,6 +28,11 @@ body {
   z-index: 99996 !important;
 }
 
+/* Keep dropdowns/time pickers clickable above dialog overlay */
+.el-popper {
+  z-index: 100000 !important;
+}
+
 /* Styles for custom modal fallback */
 .custom-modal-overlay {
   position: fixed;

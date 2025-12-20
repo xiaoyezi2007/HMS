@@ -26,6 +26,30 @@ export interface WardInfo {
   is_full: boolean;
 }
 
+export interface DoctorInpatientItem {
+  hosp_id: number;
+  patient_id: number;
+  patient_name: string;
+  ward_id: number;
+  ward_type: string;
+  in_date: string;
+  stay_hours: number;
+  reg_id: number;
+}
+
+export interface NurseTaskCreatePayload {
+  type: string;
+  time: string;
+}
+
+export interface NurseTaskItem {
+  task_id: number;
+  type: string;
+  time: string;
+  nurse_id: number;
+  hosp_id: number;
+}
+
 export function fetchDoctorSchedule() {
   return http.get<RegistrationItem[]>("/api/doctor/schedule");
 }
@@ -60,6 +84,14 @@ export function fetchExaminations(regId: number) {
 
 export function fetchDoctorWards() {
   return http.get<WardInfo[]>("/api/doctor/wards");
+}
+
+export function fetchDoctorInpatients() {
+  return http.get<DoctorInpatientItem[]>("/api/doctor/inpatients");
+}
+
+export function createNurseTask(hospId: number, payload: NurseTaskCreatePayload) {
+  return http.post(`/api/doctor/hospitalizations/${hospId}/tasks`, payload);
 }
 
 export function hospitalizePatient(regId: number, payload: { ward_id: number }) {

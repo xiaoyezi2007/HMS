@@ -36,12 +36,22 @@
     <el-card shadow="hover">
       <template #header>
         <div class="card-header">
-          <span>新增病房</span>
-          <small>须先选择科室，再选择预设病房类型（床位数将自动匹配）</small>
+          <span>病房管理</span>
+          <small>房间号需手工录入（101-999），科室与病房类型决定床位数</small>
         </div>
       </template>
       <el-form :model="wardForm" label-width="90px">
         <el-row :gutter="12">
+          <el-col :xs="24" :sm="12" :md="6">
+            <el-form-item label="房间号">
+              <el-input-number
+                v-model="wardForm.ward_id"
+                :controls="false"
+                placeholder="101-999"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
           <el-col :xs="24" :sm="12" :md="8">
             <el-form-item label="科室">
               <el-select v-model="wardForm.dept_id" placeholder="选择所属科室" filterable :loading="deptLoading">
@@ -68,15 +78,30 @@
         </el-row>
       </el-form>
       <div class="management-toolbar" style="margin-top: 12px">
-        <el-input v-model="searchWardDept" placeholder="按科室搜索" clearable />
-        <el-input v-model="searchWardType" placeholder="按病房类型搜索" clearable />
+        <el-select
+          v-model="searchWardDept"
+          placeholder="选择科室筛选"
+          clearable
+          filterable
+          style="min-width: 180px"
+        >
+          <el-option v-for="dept in departments" :key="dept.dept_id" :label="dept.dept_name" :value="dept.dept_name" />
+        </el-select>
+        <el-select
+          v-model="searchWardType"
+          placeholder="选择病房类型"
+          clearable
+          style="min-width: 180px"
+        >
+          <el-option v-for="opt in wardTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+        </el-select>
         <el-button type="primary" link :loading="wardLoading" @click="loadWards">刷新</el-button>
       </div>
       <el-table :data="visibleWards" v-loading="wardLoading" size="small" border>
+        <el-table-column prop="ward_id" label="房间号" width="100" />
         <el-table-column prop="dept_name" label="科室" min-width="160" />
         <el-table-column prop="type" label="病房类型" min-width="140" />
         <el-table-column prop="bed_count" label="床位数" width="120" />
-        <el-table-column prop="ward_id" label="ID" width="120" />
         <el-table-column label="操作" width="120">
           <template #default="scope">
             <el-button type="danger" link @click="handleHideWard(scope.row.ward_id)">删除</el-button>
@@ -409,11 +434,11 @@ const searchWardDept = ref("");
 const searchWardType = ref("");
 const visibleWards = computed(() => {
   return wardList.value.filter((w) => {
-    const matchDept = searchWardDept.value.trim()
-      ? w.dept_name.toLowerCase().includes(searchWardDept.value.trim().toLowerCase())
+    const matchDept = searchWardDept.value
+      ? w.dept_name.toLowerCase() === searchWardDept.value.toLowerCase()
       : true;
-    const matchType = searchWardType.value.trim()
-      ? w.type.toLowerCase().includes(searchWardType.value.trim().toLowerCase())
+    const matchType = searchWardType.value
+      ? w.type === searchWardType.value
       : true;
     const isHidden = hiddenWardIds.value.has(w.ward_id);
     return matchDept && matchType && !isHidden;
@@ -425,6 +450,7 @@ const deptForm = reactive({
 });
 const defaultWardType = wardTypeOptions.find((item) => item.value !== ICU_TYPE_VALUE) ?? wardTypeOptions[0];
 const wardForm = reactive({
+  ward_id: null as number | null,
   dept_id: null as number | null,
   type: defaultWardType?.value ?? "",
   bed_count: defaultWardType?.bedCount ?? 0
@@ -597,6 +623,7 @@ function resetDeptForm() {
 }
 
 function resetWardForm() {
+  wardForm.ward_id = null;
   wardForm.dept_id = null;
   wardForm.type = defaultWardType?.value ?? "";
   wardForm.bed_count = defaultWardType?.bedCount ?? 0;
@@ -819,8 +846,19 @@ function handleCreateWard() {
     ElMessage.warning("请选择病房类型");
     return;
   }
+  if (
+    wardForm.ward_id === null ||
+    wardForm.ward_id === undefined ||
+    !Number.isInteger(wardForm.ward_id) ||
+    wardForm.ward_id < 101 ||
+    wardForm.ward_id > 999
+  ) {
+    ElMessage.warning("房间号格式错误，需输入 101-999 的整数");
+    return;
+  }
   wardCreating.value = true;
   createWard({
+    ward_id: wardForm.ward_id,
     dept_id: wardForm.dept_id,
     type: wardForm.type.trim(),
     bed_count: wardForm.bed_count

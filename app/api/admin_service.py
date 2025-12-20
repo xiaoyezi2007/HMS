@@ -735,6 +735,9 @@ async def create_ward(
     dept = await session.get(Department, payload.dept_id)
     if not dept:
         raise HTTPException(status_code=404, detail="科室不存在")
+    existing = await session.get(Ward, payload.ward_id)
+    if existing:
+        raise HTTPException(status_code=400, detail="房间号已存在")
     ward_type = payload.type.strip()
     expected_beds = WARD_TYPE_RULES.get(ward_type)
     if expected_beds is None:
@@ -743,7 +746,7 @@ async def create_ward(
             detail=f"病房类型仅支持：{', '.join(WARD_TYPE_RULES.keys())}"
         )
 
-    ward = Ward(dept_id=payload.dept_id, bed_count=expected_beds, type=ward_type)
+    ward = Ward(ward_id=payload.ward_id, dept_id=payload.dept_id, bed_count=expected_beds, type=ward_type)
     session.add(ward)
     await session.commit()
     await session.refresh(ward)

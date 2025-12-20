@@ -120,7 +120,7 @@ const featureCards = [
     color: "#fce7f3"
   },
   {
-    title: "医生工作站",
+    title: "就诊处理",
     desc: "处理待诊挂号、填写病历并联动处方流",
     icon: Suitcase,
     color: "#e0f2fe"
