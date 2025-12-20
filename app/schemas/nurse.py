@@ -38,6 +38,25 @@ class WardScheduleGroup(SQLModel):
     schedules: List[WardScheduleEntry]
 
 
+class WardOverviewItem(SQLModel):
+    ward_id: int
+    ward_type: str
+    bed_count: int
+
+
+class WardRecordItem(SQLModel):
+    ward_id: int
+    ward_type: str
+    hosp_id: int
+    record_id: int
+    patient_id: int
+    patient_name: str
+    complaint: str
+    diagnosis: str
+    suggestion: Optional[str] = None
+    in_date: datetime
+
+
 class HeadScheduleContext(SQLModel):
     wards: List[WardScheduleGroup]
     nurses: List[NurseOption]

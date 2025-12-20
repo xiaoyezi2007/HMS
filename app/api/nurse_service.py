@@ -28,6 +28,8 @@ from app.schemas.nurse import (
     NurseOption,
     WardScheduleEntry,
     WardScheduleGroup,
+    WardOverviewItem,
+    WardRecordItem,
     ScheduleUpsertPayload,
     AutoScheduleRequest,
 )
@@ -122,6 +124,67 @@ async def get_head_schedule_context(
     return HeadScheduleContext(wards=ward_payload, nurses=nurse_options)
 
 
+@router.get("/ward_overview", response_model=List[WardOverviewItem])
+async def get_ward_overview(
+        nurse: Nurse = Depends(get_current_nurse),
+        session: AsyncSession = Depends(get_session)
+):
+    if nurse.is_head_nurse:
+        ward_stmt = select(Ward)
+    else:
+        ward_stmt = select(Ward).join(NurseSchedule, NurseSchedule.ward_id == Ward.ward_id).where(
+            NurseSchedule.nurse_id == nurse.nurse_id
+        )
+    wards = (await session.execute(ward_stmt)).scalars().unique().all()
+    return [WardOverviewItem(ward_id=w.ward_id, ward_type=w.type, bed_count=w.bed_count) for w in wards]
+
+
+@router.get("/ward/{ward_id}/records", response_model=List[WardRecordItem])
+async def list_ward_records(
+        ward_id: int,
+        nurse: Nurse = Depends(get_current_nurse),
+        session: AsyncSession = Depends(get_session)
+):
+    ward = await session.get(Ward, ward_id)
+    if not ward:
+        raise HTTPException(status_code=404, detail="病房不存在")
+
+    if not nurse.is_head_nurse:
+        # 普通护士只能查看自己排班的病房
+        assigned_stmt = select(NurseSchedule).where(
+            NurseSchedule.nurse_id == nurse.nurse_id,
+            NurseSchedule.ward_id == ward_id
+        )
+        assigned = (await session.execute(assigned_stmt)).scalars().first()
+        if not assigned:
+            raise HTTPException(status_code=403, detail="无权查看该病房")
+
+    stmt = (
+        select(Hospitalization, MedicalRecord, Registration, Patient)
+        .join(MedicalRecord, Hospitalization.record_id == MedicalRecord.record_id)
+        .join(Registration, MedicalRecord.reg_id == Registration.reg_id)
+        .join(Patient, Registration.patient_id == Patient.patient_id)
+        .where(Hospitalization.ward_id == ward_id, Hospitalization.status == "在院")
+    )
+
+    rows = (await session.execute(stmt)).all()
+    records: List[WardRecordItem] = []
+    for hosp, record, _, patient in rows:
+        records.append(WardRecordItem(
+            ward_id=ward.ward_id,
+            ward_type=ward.type,
+            hosp_id=hosp.hosp_id,
+            record_id=record.record_id,
+            patient_id=patient.patient_id,
+            patient_name=patient.name,
+            complaint=record.complaint,
+            diagnosis=record.diagnosis,
+            suggestion=record.suggestion,
+            in_date=hosp.in_date,
+        ))
+    return records
+
+
 @router.post("/head/schedules/upsert")
 async def upsert_schedule_slot(
         payload: ScheduleUpsertPayload,
@@ -191,10 +254,14 @@ async def auto_generate_schedules(
     shift_hours = payload.shift_hours or 8
     shift_count = payload.shift_count or 3
 
-    ward_stmt = select(Ward)
+    ward_stmt = (
+        select(Ward)
+        .join(Hospitalization, Hospitalization.ward_id == Ward.ward_id)
+        .where(Hospitalization.status == "在院")
+    )
     if payload.ward_ids:
         ward_stmt = ward_stmt.where(Ward.ward_id.in_(payload.ward_ids))
-    wards = (await session.execute(ward_stmt)).scalars().all()
+    wards = (await session.execute(ward_stmt)).scalars().unique().all()
     if not wards:
         raise HTTPException(status_code=400, detail="未找到可排班的病房")
 

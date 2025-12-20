@@ -100,6 +100,7 @@ class Nurse(SQLModel, table=True):
     phone: str = Field(max_length=11, unique=True)
     is_head_nurse: bool = Field(default=False, description="是否为护士长")
     schedules: List["NurseSchedule"] = Relationship(back_populates="nurse")
+    tasks: List["NurseTask"] = Relationship(back_populates="nurse")
 
 
 # --- 10. 病房表 ---
@@ -121,6 +122,18 @@ class NurseSchedule(SQLModel, table=True):
 
     nurse: Optional[Nurse] = Relationship(back_populates="schedules")
     ward: Optional[Ward] = Relationship(back_populates="schedules")
+
+
+# --- 11b. 护士代办表 (NurseTask) ---
+class NurseTask(SQLModel, table=True):
+    task_id: Optional[int] = Field(default=None, primary_key=True)
+    type: str = Field(max_length=100, description="检查/任务类型")
+    time: datetime = Field(description="需要完成的时间")
+    nurse_id: int = Field(foreign_key="nurse.nurse_id")
+    hosp_id: int = Field(foreign_key="hospitalization.hosp_id")
+
+    nurse: Optional[Nurse] = Relationship(back_populates="tasks")
+    hospitalization: Optional["Hospitalization"] = Relationship()
 
 # --- 12. 药品表 ---
 class Medicine(SQLModel, table=True):

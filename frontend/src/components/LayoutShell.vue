@@ -9,7 +9,7 @@
         <el-menu :default-active="activePath" @select="handleSelect" class="menu">
           <el-menu-item v-for="item in availableMenu" :key="item.path" :index="item.path">
             <component :is="item.icon" class="menu-icon" />
-            <span>{{ item.label }}</span>
+            <span>{{ getMenuLabel(item) }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -119,6 +119,13 @@ const availableMenu = computed(() =>
 
 const activePath = computed(() => route.path);
 
+function getMenuLabel(item: MenuItem) {
+  if (item.path === "/workspace/overview" && auth.currentRole === "护士") {
+    return "病房总览";
+  }
+  return item.label;
+}
+
 const currentMenuLabel = computed(() => {
   let found: MenuItem | undefined;
   for (const item of menuConfig) {
@@ -127,7 +134,7 @@ const currentMenuLabel = computed(() => {
       break;
     }
   }
-  return found ? found.label : "系统总览";
+  return found ? getMenuLabel(found) : "系统总览";
 });
 
 function handleSelect(path: string) {

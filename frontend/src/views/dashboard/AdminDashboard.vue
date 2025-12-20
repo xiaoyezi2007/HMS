@@ -71,7 +71,6 @@
         <el-input v-model="searchWardDept" placeholder="按科室搜索" clearable />
         <el-input v-model="searchWardType" placeholder="按病房类型搜索" clearable />
         <el-button type="primary" link :loading="wardLoading" @click="loadWards">刷新</el-button>
-        <el-checkbox v-model="showHiddenWards">显示已删除项</el-checkbox>
       </div>
       <el-table :data="visibleWards" v-loading="wardLoading" size="small" border>
         <el-table-column prop="dept_name" label="科室" min-width="160" />
@@ -408,7 +407,6 @@ const wardList = ref<WardItem[]>([]);
 const hiddenWardIds = ref<Set<number>>(new Set());
 const searchWardDept = ref("");
 const searchWardType = ref("");
-const showHiddenWards = ref(false);
 const visibleWards = computed(() => {
   return wardList.value.filter((w) => {
     const matchDept = searchWardDept.value.trim()
@@ -418,8 +416,7 @@ const visibleWards = computed(() => {
       ? w.type.toLowerCase().includes(searchWardType.value.trim().toLowerCase())
       : true;
     const isHidden = hiddenWardIds.value.has(w.ward_id);
-    const shouldShow = showHiddenWards.value ? true : !isHidden;
-    return matchDept && matchType && shouldShow;
+    return matchDept && matchType && !isHidden;
   });
 });
 const deptForm = reactive({

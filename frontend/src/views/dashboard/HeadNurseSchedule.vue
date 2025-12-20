@@ -74,7 +74,8 @@
         </div>
       </template>
       <el-table :data="flattenedRows" v-loading="loading" empty-text="暂无排班数据" border>
-        <el-table-column prop="ward_type" label="病房" width="160" />
+        <el-table-column prop="ward_id" label="病房ID" width="120" />
+        <el-table-column prop="ward_type" label="病房类型" width="160" />
         <el-table-column prop="start_time" label="值班时间" width="260">
           <template #default="{ row }">
             {{ formatRange(row.start_time, row.end_time) }}

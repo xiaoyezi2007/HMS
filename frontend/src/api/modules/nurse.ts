@@ -34,6 +34,25 @@ export interface NurseOption {
   is_head_nurse: boolean;
 }
 
+export interface WardOverviewItem {
+  ward_id: number;
+  ward_type: string;
+  bed_count: number;
+}
+
+export interface WardRecordItem {
+  ward_id: number;
+  ward_type: string;
+  hosp_id: number;
+  record_id: number;
+  patient_id: number;
+  patient_name: string;
+  complaint: string;
+  diagnosis: string;
+  suggestion?: string;
+  in_date: string;
+}
+
 export interface HeadScheduleContext {
   wards: WardScheduleGroup[];
   nurses: NurseOption[];
@@ -82,6 +101,14 @@ export function fetchNurseProfile() {
 
 export function fetchHeadScheduleContext() {
   return http.get<HeadScheduleContext>("/api/nurse/head/context");
+}
+
+export function fetchWardOverview() {
+  return http.get<WardOverviewItem[]>("/api/nurse/ward_overview");
+}
+
+export function fetchWardRecords(wardId: number) {
+  return http.get<WardRecordItem[]>(`/api/nurse/ward/${wardId}/records`);
 }
 
 export function upsertWardSchedule(payload: ScheduleUpsertPayload) {
