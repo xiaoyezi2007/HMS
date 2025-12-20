@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, SQLModel
-from typing import List
+from typing import List, Optional
 import io
 
 from app.core.config import get_session
@@ -23,9 +23,11 @@ from app.models.hospital import (
     Payment,
     PaymentType,
     Prescription,
+    PrescriptionDetail,
     Ward,
     Hospitalization,
     ExamResult,
+    Medicine,
     Nurse,
     NurseSchedule,
     NurseTask,
@@ -325,6 +327,136 @@ async def list_my_inpatients(
             "reg_id": reg.reg_id,
         })
     return payload
+
+
+@router.get("/patients/{patient_id}/registrations/history")
+async def get_patient_registration_history(
+    patient_id: int,
+    range: str = "current",
+    current_reg_id: Optional[int] = None,
+    doctor: Doctor = Depends(get_current_doctor),
+    session: AsyncSession = Depends(get_session)
+):
+    patient = await session.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="患者不存在")
+
+    allowed_ranges = {"current", "7d", "30d"}
+    if range not in allowed_ranges:
+        raise HTTPException(status_code=400, detail="range 仅支持 current、7d、30d")
+
+    stmt = (
+        select(Registration, MedicalRecord)
+        .outerjoin(MedicalRecord, MedicalRecord.reg_id == Registration.reg_id)
+        .where(Registration.patient_id == patient_id)
+        .where(Registration.doctor_id == doctor.doctor_id)
+    )
+
+    if range == "current":
+        if not current_reg_id:
+            raise HTTPException(status_code=400, detail="current 范围需要提供 current_reg_id")
+        stmt = stmt.where(Registration.reg_id == current_reg_id)
+    else:
+        days = 7 if range == "7d" else 30
+        since = datetime.now() - timedelta(days=days)
+        stmt = stmt.where(Registration.status == RegStatus.FINISHED)
+        stmt = stmt.where(Registration.reg_date >= since)
+
+    stmt = stmt.order_by(Registration.reg_date.desc())
+    rows = await session.execute(stmt)
+    entries = []
+    raw_rows = rows.all()
+    for reg, record in raw_rows:
+        status_value = reg.status.value if hasattr(reg.status, "value") else reg.status
+        entries.append({
+            "reg_id": reg.reg_id,
+            "reg_date": reg.reg_date,
+            "visit_date": reg.visit_date,
+            "status": status_value,
+            "reg_type": reg.reg_type,
+            "fee": float(reg.fee or 0),
+            "patient_id": reg.patient_id,
+            "doctor_id": reg.doctor_id,
+            "is_current": bool(current_reg_id and reg.reg_id == current_reg_id),
+            "record": (
+                {
+                    "record_id": record.record_id,
+                    "complaint": record.complaint,
+                    "diagnosis": record.diagnosis,
+                    "suggestion": record.suggestion
+                }
+                if record else None
+            )
+        })
+
+    if range == "current" and not entries:
+        raise HTTPException(status_code=404, detail="未找到当前挂号记录")
+
+    return entries
+
+
+@router.get("/registrations/{reg_id}/detail")
+async def get_registration_detail_for_doctor(
+    reg_id: int,
+    doctor: Doctor = Depends(get_current_doctor),
+    session: AsyncSession = Depends(get_session)
+):
+    registration = await session.get(Registration, reg_id)
+    if not registration:
+        raise HTTPException(status_code=404, detail="挂号单不存在")
+    if registration.doctor_id != doctor.doctor_id:
+        raise HTTPException(status_code=403, detail="您只能查看自己的挂号记录")
+
+    record = (
+        await session.execute(select(MedicalRecord).where(MedicalRecord.reg_id == reg_id))
+    ).scalars().first()
+
+    prescriptions_payload = []
+    if record:
+        pres_stmt = select(Prescription).where(Prescription.record_id == record.record_id)
+        prescriptions = (await session.execute(pres_stmt)).scalars().all()
+        for pres in prescriptions:
+            details_stmt = select(PrescriptionDetail).where(PrescriptionDetail.pres_id == pres.pres_id)
+            details = (await session.execute(details_stmt)).scalars().all()
+            enriched = []
+            for detail in details:
+                medicine = await session.get(Medicine, detail.medicine_id)
+                enriched.append({
+                    "detail_id": detail.detail_id,
+                    "medicine_id": detail.medicine_id,
+                    "medicine_name": medicine.name if medicine else None,
+                    "quantity": detail.quantity,
+                    "usage": detail.usage,
+                })
+            prescriptions_payload.append({
+                "pres_id": pres.pres_id,
+                "create_time": pres.create_time,
+                "total_amount": pres.total_amount,
+                "status": pres.status,
+                "details": enriched,
+            })
+
+    exams_payload = []
+    if record:
+        exam_stmt = select(Examination).where(Examination.record_id == record.record_id)
+        exams = (await session.execute(exam_stmt)).scalars().all()
+        for exam in exams:
+            exams_payload.append({
+                "exam_id": exam.exam_id,
+                "type": exam.type,
+                "result": exam.result,
+                "date": exam.date,
+                "record_id": exam.record_id,
+                "reg_id": record.reg_id,
+            })
+
+    return {
+        "registration": registration,
+        "record": record,
+        "prescriptions": prescriptions_payload,
+        "exams": exams_payload,
+        "admissions": []
+    }
 
 
 @router.post("/hospitalizations/{hosp_id}/tasks")

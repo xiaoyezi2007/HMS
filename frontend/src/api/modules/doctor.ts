@@ -50,6 +50,62 @@ export interface NurseTaskItem {
   hosp_id: number;
 }
 
+export type HistoryRange = "current" | "7d" | "30d";
+
+export interface DoctorPatientRegistrationHistoryItem {
+  reg_id: number;
+  reg_date: string;
+  visit_date?: string | null;
+  status: string;
+  reg_type: string;
+  fee: number;
+  doctor_id: number;
+  patient_id: number;
+  is_current: boolean;
+  record?: {
+    record_id: number;
+    complaint?: string | null;
+    diagnosis?: string | null;
+    suggestion?: string | null;
+  } | null;
+}
+
+export interface PrescriptionDetailItem {
+  detail_id: number;
+  medicine_id: number;
+  medicine_name?: string | null;
+  quantity: number;
+  usage: string;
+}
+
+export interface PrescriptionItem {
+  pres_id: number;
+  create_time: string;
+  total_amount?: number;
+  status?: string;
+  details: PrescriptionDetailItem[];
+}
+
+export interface ExaminationItem {
+  exam_id: number;
+  type: string;
+  result?: string | null;
+  date?: string | null;
+}
+
+export interface DoctorRegistrationDetail {
+  registration: RegistrationItem;
+  record?: {
+    record_id: number;
+    complaint: string;
+    diagnosis: string;
+    suggestion?: string | null;
+  } | null;
+  prescriptions: PrescriptionItem[];
+  exams: ExaminationItem[];
+  admissions?: unknown[];
+}
+
 export function fetchDoctorSchedule() {
   return http.get<RegistrationItem[]>("/api/doctor/schedule");
 }
@@ -100,4 +156,12 @@ export function hospitalizePatient(regId: number, payload: { ward_id: number }) 
 
 export function exportTransferForm(regId: number) {
   return http.get(`/api/doctor/consultations/${regId}/transfer`, { responseType: "blob" });
+}
+
+export function fetchPatientRegistrationHistory(patientId: number, params: { range: HistoryRange; current_reg_id?: number }) {
+  return http.get<DoctorPatientRegistrationHistoryItem[]>(`/api/doctor/patients/${patientId}/registrations/history`, { params });
+}
+
+export function fetchDoctorRegistrationDetail(regId: number) {
+  return http.get<DoctorRegistrationDetail>(`/api/doctor/registrations/${regId}/detail`);
 }

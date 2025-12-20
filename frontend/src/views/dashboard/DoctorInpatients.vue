@@ -51,7 +51,7 @@
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="scope">
             <el-button size="small" type="primary" link @click="openTaskDialog(scope.row)">添加护理任务</el-button>
-            <el-button size="small" type="primary" link @click="goToConsultation(scope.row)">查看接诊记录</el-button>
+            <el-button size="small" type="primary" link @click="openHistoryDialog(scope.row)">查看接诊记录</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -70,7 +70,7 @@
       </div>
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
-        <el-button type="primary" @click="goToConsultation(detailItem!)">查看接诊记录</el-button>
+        <el-button type="primary" @click="detailItem && openHistoryDialog(detailItem)">查看接诊记录</el-button>
       </template>
     </el-dialog>
 
@@ -98,16 +98,150 @@
         <el-button type="primary" :loading="taskSubmitting" @click="submitTask">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="historyDialogVisible"
+      :title="historyContext ? `接诊记录 · ${historyContext.patient_name}` : '接诊记录'"
+      width="780px"
+      destroy-on-close
+    >
+      <div v-if="historyContext" class="history-header">
+        <div>
+          <div class="history-name">{{ historyContext.patient_name }}</div>
+          <div class="history-meta">患者 ID：{{ historyContext.patient_id }}</div>
+        </div>
+        <el-radio-group v-model="historyRange" size="small" class="history-range">
+          <el-radio-button label="current">本次挂号</el-radio-button>
+          <el-radio-button label="7d">近 7 天</el-radio-button>
+          <el-radio-button label="30d">近 1 个月</el-radio-button>
+        </el-radio-group>
+      </div>
+      <el-alert
+        v-if="historyError"
+        class="history-alert"
+        type="error"
+        show-icon
+        closable
+        :title="historyError"
+        @close="historyError = ''"
+      />
+      <el-skeleton v-if="historyLoading" :rows="5" animated />
+      <el-empty v-else-if="!historyItems.length" description="暂无符合条件的挂号" />
+      <el-collapse v-else v-model="historyActivePanels" class="history-collapse" accordion>
+        <el-collapse-item v-for="item in historyItems" :key="item.reg_id" :name="String(item.reg_id)">
+          <template #title>
+            <div class="history-title">
+              <span>#{{ item.reg_id }}</span>
+              <span class="history-date">{{ formatDate(item.reg_date) }}</span>
+              <el-tag size="small" type="info">{{ normalizeRegStatus(item.status) }}</el-tag>
+              <el-tag v-if="item.is_current" size="small" type="success">本次</el-tag>
+              <el-tag size="small" type="warning">{{ item.reg_type }}</el-tag>
+            </div>
+          </template>
+          <div class="history-body">
+            <p><strong>主诉：</strong>{{ item.record?.complaint || "尚未填写" }}</p>
+            <p><strong>诊断：</strong>{{ item.record?.diagnosis || "尚未填写" }}</p>
+            <p><strong>建议：</strong>{{ item.record?.suggestion || "—" }}</p>
+            <div class="history-body-meta">
+              <span>就诊日期：{{ item.visit_date ? formatDate(item.visit_date) : "-" }}</span>
+              <span>费用：{{ formatCurrency(item.fee) }}</span>
+            </div>
+            <div class="history-actions">
+              <el-button size="small" @click="viewRegistrationDetail(item.reg_id)">查看详情</el-button>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+    </el-dialog>
+
+    <el-drawer
+      v-model="registrationDetailVisible"
+      title="挂号详情"
+      size="640px"
+      destroy-on-close
+      append-to-body
+    >
+      <el-skeleton v-if="registrationDetailLoading" :rows="6" animated />
+      <div v-else-if="registrationDetail" class="detail-scroll">
+        <section class="detail-section">
+          <h4>挂号信息</h4>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="挂号号">{{ registrationDetail.registration.reg_id }}</el-descriptions-item>
+            <el-descriptions-item label="号别">{{ registrationDetail.registration.reg_type }}</el-descriptions-item>
+            <el-descriptions-item label="状态">{{ normalizeRegStatus(registrationDetail.registration.status) }}</el-descriptions-item>
+            <el-descriptions-item label="费用">{{ formatCurrency(registrationDetail.registration.fee) }}</el-descriptions-item>
+            <el-descriptions-item label="挂号时间">{{ formatDate(registrationDetail.registration.reg_date) }}</el-descriptions-item>
+            <el-descriptions-item label="就诊日期">{{ registrationDetail.registration.visit_date ? formatDate(registrationDetail.registration.visit_date) : "-" }}</el-descriptions-item>
+          </el-descriptions>
+        </section>
+
+        <section class="detail-section">
+          <h4>病历摘要</h4>
+          <div v-if="registrationDetail.record">
+            <p><strong>主诉：</strong>{{ registrationDetail.record.complaint }}</p>
+            <p><strong>诊断：</strong>{{ registrationDetail.record.diagnosis }}</p>
+            <p><strong>建议：</strong>{{ registrationDetail.record.suggestion || "—" }}</p>
+          </div>
+          <el-empty v-else description="尚未书写病历" />
+        </section>
+
+        <section class="detail-section">
+          <h4>处方</h4>
+          <div v-if="registrationDetail.prescriptions.length">
+            <el-collapse accordion>
+              <el-collapse-item
+                v-for="pres in registrationDetail.prescriptions"
+                :key="pres.pres_id"
+                :title="`处方 ${pres.pres_id} · ${formatCurrency(pres.total_amount)}`"
+                :name="String(pres.pres_id)"
+              >
+                <el-table :data="pres.details" size="small" border>
+                  <el-table-column prop="medicine_name" label="药品" />
+                  <el-table-column prop="quantity" label="数量" width="80" />
+                  <el-table-column prop="usage" label="用法" />
+                </el-table>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+          <el-empty v-else description="暂无处方" />
+        </section>
+
+        <section class="detail-section">
+          <h4>检查</h4>
+          <div v-if="registrationDetail.exams.length">
+            <el-table :data="registrationDetail.exams" size="small" border>
+              <el-table-column prop="type" label="检查类型" />
+              <el-table-column prop="result" label="结果" />
+              <el-table-column label="时间">
+                <template #default="{ row }">{{ row.date ? formatDate(row.date) : "-" }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <el-empty v-else description="暂无检查记录" />
+        </section>
+      </div>
+      <div v-else class="detail-empty">
+        <el-empty description="未加载到挂号详情" />
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
-import { useRouter } from "vue-router";
-import { createNurseTask, fetchDoctorInpatients, type DoctorInpatientItem, type NurseTaskCreatePayload } from "../../api/modules/doctor";
+import {
+  createNurseTask,
+  fetchDoctorInpatients,
+  fetchPatientRegistrationHistory,
+  fetchDoctorRegistrationDetail,
+  type DoctorInpatientItem,
+  type NurseTaskCreatePayload,
+  type DoctorPatientRegistrationHistoryItem,
+  type DoctorRegistrationDetail,
+  type HistoryRange
+} from "../../api/modules/doctor";
 
-const router = useRouter();
 const inpatients = ref<DoctorInpatientItem[]>([]);
 const loading = ref(false);
 const detailVisible = ref(false);
@@ -123,14 +257,71 @@ const taskOptions = [
 ];
 const activeHospId = ref<number | null>(null);
 
+type HistoryContext = { patient_id: number; patient_name: string; current_reg_id: number };
+
+const historyDialogVisible = ref(false);
+const historyRange = ref<HistoryRange>("current");
+const historyItems = ref<DoctorPatientRegistrationHistoryItem[]>([]);
+const historyContext = ref<HistoryContext | null>(null);
+const historyLoading = ref(false);
+const historyError = ref("");
+const historyActivePanels = ref<string[]>([]);
+
+const registrationDetailVisible = ref(false);
+const registrationDetailLoading = ref(false);
+const registrationDetail = ref<DoctorRegistrationDetail | null>(null);
+
 const avgStay = computed(() => {
   if (!inpatients.value.length) return "0 小时";
   const hours = inpatients.value.reduce((sum, item) => sum + item.stay_hours, 0) / inpatients.value.length;
   return `${hours.toFixed(1)} 小时`;
 });
 
-function formatDate(val: string) {
+watch(historyItems, (items) => {
+  historyActivePanels.value = items.length ? [String(items[0].reg_id)] : [];
+});
+
+watch(historyRange, () => {
+  if (historyDialogVisible.value) {
+    void loadHistory();
+  }
+});
+
+watch(historyDialogVisible, (visible) => {
+  if (!visible) {
+    historyItems.value = [];
+    historyError.value = "";
+    historyContext.value = null;
+  }
+});
+
+function formatDate(val?: string | null) {
+  if (!val) {
+    return "-";
+  }
   return new Date(val).toLocaleString();
+}
+
+function formatCurrency(value?: number | null) {
+  const amount = Number(value ?? 0);
+  return `￥${amount.toFixed(2)}`;
+}
+
+function normalizeRegStatus(value?: string | null) {
+  if (!value) return "未知";
+  const map: Record<string, string> = {
+    WAITING: "排队中",
+    IN_PROGRESS: "就诊中",
+    FINISHED: "已完成",
+    CANCELLED: "已取消",
+    EXPIRED: "已过期",
+    排队中: "排队中",
+    就诊中: "就诊中",
+    已完成: "已完成",
+    已取消: "已取消",
+    已过期: "已过期"
+  };
+  return map[value] || value;
 }
 
 function formatStay(hours: number) {
@@ -154,8 +345,56 @@ async function loadInpatients() {
   }
 }
 
-function goToConsultation(row: DoctorInpatientItem) {
-  router.push({ path: `/workspace/consultation/${row.reg_id}`, query: { patient_id: String(row.patient_id) } });
+function openHistoryDialog(row: DoctorInpatientItem) {
+  historyContext.value = {
+    patient_id: row.patient_id,
+    patient_name: row.patient_name,
+    current_reg_id: row.reg_id
+  };
+  historyRange.value = "current";
+  historyDialogVisible.value = true;
+  void loadHistory();
+}
+
+async function loadHistory() {
+  if (!historyContext.value) {
+    return;
+  }
+  historyLoading.value = true;
+  historyError.value = "";
+  const params: { range: HistoryRange; current_reg_id?: number } = { range: historyRange.value };
+  if (historyContext.value.current_reg_id) {
+    params.current_reg_id = historyContext.value.current_reg_id;
+  }
+  try {
+    const { data } = await fetchPatientRegistrationHistory(historyContext.value.patient_id, params);
+    historyItems.value = data;
+  } catch (err: any) {
+    historyItems.value = [];
+    historyError.value = err?.response?.data?.detail ?? "接诊记录加载失败";
+    ElMessage.error(historyError.value);
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+async function viewRegistrationDetail(regId: number) {
+  registrationDetailVisible.value = true;
+  registrationDetailLoading.value = true;
+  try {
+    const { data } = await fetchDoctorRegistrationDetail(regId);
+    registrationDetail.value = {
+      ...data,
+      prescriptions: data.prescriptions ?? [],
+      exams: data.exams ?? []
+    };
+  } catch (err: any) {
+    registrationDetailVisible.value = false;
+    const message = err?.response?.data?.detail ?? "加载挂号详情失败";
+    ElMessage.error(message);
+  } finally {
+    registrationDetailLoading.value = false;
+  }
 }
 
 function openHospDetail(row: DoctorInpatientItem) {
@@ -277,5 +516,86 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.history-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.history-meta {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.history-range {
+  flex-shrink: 0;
+}
+
+.history-alert {
+  margin-bottom: 12px;
+}
+
+.history-collapse {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.history-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-date {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.history-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.history-body-meta {
+  display: flex;
+  gap: 20px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.history-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.detail-scroll {
+  max-height: 75vh;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.detail-section {
+  margin-bottom: 18px;
+}
+
+.detail-section h4 {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.detail-empty {
+  padding: 24px 0;
 }
 </style>
