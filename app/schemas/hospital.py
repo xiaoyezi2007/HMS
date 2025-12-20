@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel
 from datetime import date, datetime
-from pydantic import field_validator
+from pydantic import FieldValidationInfo, field_validator
 
 from app.models.hospital import Gender, RegType
 
@@ -61,6 +61,14 @@ class PaymentRead(SQLModel):
 
 ALLOWED_DOCTOR_TITLES = {"专家医师", "普通医师", "主治医师"}
 
+# --- 病房类型映射 ---
+WARD_TYPE_RULES = {
+    "单人房": 1,
+    "双人房": 2,
+    "四人病房": 4,
+    "重症监护": 1
+}
+
 
 class DoctorTitleUpdate(SQLModel):
     title: str
@@ -93,14 +101,19 @@ class DepartmentCreate(SQLModel):
 
 class WardCreate(SQLModel):
     dept_id: int
-    bed_count: int
     type: str
+    bed_count: int
 
     @field_validator("bed_count")
     @classmethod
-    def validate_bed_count(cls, value: int) -> int:
+    def validate_bed_count(cls, value: int, info: FieldValidationInfo) -> int:
         if value <= 0:
             raise ValueError("床位数必须大于 0")
+        ward_type = info.data.get("type") if info and info.data else None
+        if ward_type:
+            expected = WARD_TYPE_RULES.get(ward_type)
+            if expected is not None and value != expected:
+                raise ValueError("床位数必须与病房类型保持一致")
         return value
 
     @field_validator("type")
@@ -108,4 +121,7 @@ class WardCreate(SQLModel):
     def validate_type(cls, value: str) -> str:
         if not value or not value.strip():
             raise ValueError("病房类型不能为空")
-        return value.strip()
+        normalized = value.strip()
+        if normalized not in WARD_TYPE_RULES:
+            raise ValueError("病房类型仅能从预设列表选择")
+        return normalized

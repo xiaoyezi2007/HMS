@@ -84,6 +84,25 @@ export interface RevenueSummary {
   records: RevenueRecord[];
 }
 
+export interface AccountImportError {
+  row_number: number;
+  message: string;
+}
+
+export interface AccountImportSuccessItem {
+  row_number: number;
+  phone: string;
+  username: string;
+  role: string;
+}
+
+export interface AccountImportResult {
+  total_rows: number;
+  success_count: number;
+  success_items: AccountImportSuccessItem[];
+  errors: AccountImportError[];
+}
+
 export function fetchStaffAccounts(role?: string) {
   if (role) {
     return http.get<StaffAccount[]>("/api/admin/accounts", { params: { role } });
@@ -133,4 +152,14 @@ export function updateNurseHeadStatus(nurseId: number, isHead: boolean) {
 
 export function fetchRevenueSummary() {
   return http.get<RevenueSummary>('/api/admin/revenue');
+}
+
+export function downloadAccountTemplate() {
+  return http.get<Blob>('/api/admin/accounts/template', { responseType: 'blob' });
+}
+
+export function importStaffAccounts(formData: FormData) {
+  return http.post<AccountImportResult>('/api/admin/accounts/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
 }

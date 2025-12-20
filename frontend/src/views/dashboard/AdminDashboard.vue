@@ -37,7 +37,7 @@
       <template #header>
         <div class="card-header">
           <span>新增病房</span>
-          <small>需先选择科室，再录入床位数和类型</small>
+          <small>须先选择科室，再选择预设病房类型（床位数将自动匹配）</small>
         </div>
       </template>
       <el-form :model="wardForm" label-width="90px">
@@ -51,12 +51,14 @@
           </el-col>
           <el-col :xs="24" :sm="12" :md="6">
             <el-form-item label="类型">
-              <el-input v-model="wardForm.type" placeholder="如 普通房/单人房" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12" :md="6">
-            <el-form-item label="床位数">
-              <el-input-number v-model="wardForm.bed_count" :min="1" :precision="0" />
+              <el-select v-model="wardForm.type" placeholder="选择病房类型">
+                <el-option
+                  v-for="option in availableWardTypeOptions"
+                  :key="option.value"
+                  :label="`${option.label} · ${option.bedCount} 床`"
+                  :value="option.value"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="24" :md="4" class="form-actions">
@@ -160,6 +162,66 @@
     <el-card shadow="hover">
       <template #header>
         <div class="card-header">
+          <span>批量导入医护账号</span>
+          <small>下载模板后批量编辑，再上传 Excel/CSV 一键创建账号</small>
+        </div>
+      </template>
+      <div class="import-card">
+        <div class="import-instructions">
+          <p>· 保留表头不变，手机号、用户名、角色为必填，医生需在“所属科室 ID”列填入数字，可参考模板中的“科室列表”，并补充姓名/性别/级别。</p>
+          <p>· 支持 .xlsx / .csv 文件。模板已包含示例，重复手机号会自动跳过。</p>
+        </div>
+        <div class="import-actions">
+          <el-button type="primary" plain :loading="templateLoading" @click="handleDownloadTemplate">
+            下载模板
+          </el-button>
+          <el-upload
+            ref="uploadRef"
+            class="upload-area"
+            drag
+            :auto-upload="false"
+            :file-list="uploadFiles"
+            accept=".xlsx,.csv"
+            @change="handleImportFileChange"
+            @remove="handleImportFileRemove"
+          >
+            <el-icon class="upload-icon"><UploadFilled /></el-icon>
+            <div class="el-upload__text">
+              将文件拖拽到此或<em>点击上传</em>
+            </div>
+            <template #tip>
+              <div class="upload-tip">建议直接在模板上编辑，单文件不超过 5MB</div>
+            </template>
+          </el-upload>
+          <el-button type="success" :loading="importing" @click="handleImportSubmit">
+            执行导入
+          </el-button>
+        </div>
+      </div>
+      <el-alert
+        v-if="importSummary"
+        type="info"
+        show-icon
+        :closable="false"
+        class="import-summary"
+        :title="`共处理 ${importSummary.total_rows} 行，成功 ${importSummary.success_count} 条，失败 ${importSummary.errors.length} 条`"
+      />
+      <el-table
+        v-if="importSummary?.errors?.length"
+        :data="importSummary.errors"
+        size="small"
+        border
+        class="import-error-table"
+        empty-text="全部导入成功"
+      >
+        <el-table-column prop="row_number" label="行号" width="100" />
+        <el-table-column prop="message" label="失败原因" />
+      </el-table>
+    </el-card>
+
+    <el-card shadow="hover">
+      <template #header>
+        <div class="card-header">
           <span>医护账号管理</span>
           <small>统一查看现有账号，并在表格中完成医生级别与护士长设置</small>
         </div>
@@ -256,6 +318,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { UploadFilled } from "@element-plus/icons-vue";
+import type { UploadInstance, UploadProps, UploadUserFile } from "element-plus";
 import {
   createStaffAccount,
   deleteStaffAccount,
@@ -268,8 +332,11 @@ import {
   fetchAdminWards,
   createDepartment,
   createWard,
+  downloadAccountTemplate,
+  importStaffAccounts,
   type DepartmentItem,
-  type WardItem
+  type WardItem,
+  type AccountImportResult
 } from "../../api/modules/admin";
 import type { StaffAccount, DoctorProfile, NurseProfile } from "../../api/modules/admin";
 
@@ -289,6 +356,23 @@ const genderOptions = [
   { label: "男", value: "男" },
   { label: "女", value: "女" }
 ];
+
+const ICU_TYPE_VALUE = "重症监护";
+const wardTypeOptions = [
+  { label: "单人房", value: "单人房", bedCount: 1 },
+  { label: "双人房", value: "双人房", bedCount: 2 },
+  { label: "四人病房", value: "四人病房", bedCount: 4 },
+  { label: "重症监护", value: ICU_TYPE_VALUE, bedCount: 1 }
+];
+
+const uploadRef = ref<UploadInstance>();
+const uploadFiles = ref<UploadUserFile[]>([]);
+const importFile = ref<File | null>(null);
+const importing = ref(false);
+const templateLoading = ref(false);
+const importSummary = ref<AccountImportResult | null>(null);
+const allowedImportExts = [".xlsx", ".csv"];
+const maxImportSizeBytes = 5 * 1024 * 1024;
 
 const createForm = reactive({
   phone: "",
@@ -342,11 +426,16 @@ const deptForm = reactive({
   dept_name: "",
   telephone: ""
 });
+const defaultWardType = wardTypeOptions.find((item) => item.value !== ICU_TYPE_VALUE) ?? wardTypeOptions[0];
 const wardForm = reactive({
   dept_id: null as number | null,
-  type: "",
-  bed_count: 0
+  type: defaultWardType?.value ?? "",
+  bed_count: defaultWardType?.bedCount ?? 0
 });
+const selectedWardDept = computed(() =>
+  departments.value.find((dept) => dept.dept_id === wardForm.dept_id)
+);
+const availableWardTypeOptions = computed(() => wardTypeOptions);
 const isDoctorRole = computed(() => createForm.role === "医生");
 const isNurseRole = computed(() => createForm.role === "护士");
 const doctorFormInvalid = computed(() => {
@@ -470,6 +559,29 @@ watch([filterRole, searchName, searchPhone], () => {
   currentPage.value = 1;
 });
 
+watch(
+  () => wardForm.type,
+  (nextType) => {
+    const matched = wardTypeOptions.find((item) => item.value === nextType);
+    wardForm.bed_count = matched?.bedCount ?? 0;
+  }
+);
+
+watch(
+  () => wardForm.dept_id,
+  () => {
+    const options = availableWardTypeOptions.value;
+    if (!options.length) {
+      wardForm.type = "";
+      wardForm.bed_count = 0;
+      return;
+    }
+    if (!options.some((item) => item.value === wardForm.type)) {
+      wardForm.type = options[0].value;
+    }
+  }
+);
+
 function resetForm() {
   createForm.phone = "";
   createForm.username = "";
@@ -489,8 +601,91 @@ function resetDeptForm() {
 
 function resetWardForm() {
   wardForm.dept_id = null;
-  wardForm.type = "";
-  wardForm.bed_count = 0;
+  wardForm.type = defaultWardType?.value ?? "";
+  wardForm.bed_count = defaultWardType?.bedCount ?? 0;
+}
+
+function clearImportSelection() {
+  uploadRef.value?.clearFiles();
+  uploadFiles.value = [];
+  importFile.value = null;
+}
+
+const handleImportFileChange: UploadProps["onChange"] = (file, fileList) => {
+  importSummary.value = null;
+  const rawFile = file?.raw ?? null;
+  if (!rawFile) {
+    importFile.value = null;
+    uploadFiles.value = [];
+    return;
+  }
+  const fileName = (file.name || "").toLowerCase();
+  const isAllowed = allowedImportExts.some((ext) => fileName.endsWith(ext));
+  if (!isAllowed) {
+    ElMessage.warning("仅支持 .xlsx 或 .csv 文件");
+    clearImportSelection();
+    return;
+  }
+  if (rawFile.size > maxImportSizeBytes) {
+    ElMessage.warning("文件大小请控制在 5MB 以内");
+    clearImportSelection();
+    return;
+  }
+  importFile.value = rawFile;
+  uploadFiles.value = fileList.slice(-1);
+};
+
+const handleImportFileRemove: UploadProps["onRemove"] = () => {
+  importFile.value = null;
+  uploadFiles.value = [];
+};
+
+async function handleDownloadTemplate() {
+  try {
+    templateLoading.value = true;
+    const response = await downloadAccountTemplate();
+    const blob = response.data;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    link.href = url;
+    link.download = `staff-account-template-${stamp}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error: any) {
+    const message = error?.response?.data?.detail;
+    ElMessage.error(message || "模板下载失败");
+  } finally {
+    templateLoading.value = false;
+  }
+}
+
+async function handleImportSubmit() {
+  if (!importFile.value) {
+    ElMessage.warning("请先选择要导入的模板文件");
+    return;
+  }
+  importing.value = true;
+  importSummary.value = null;
+  const formData = new FormData();
+  formData.append("file", importFile.value);
+  try {
+    const { data } = await importStaffAccounts(formData);
+    importSummary.value = data;
+    if (data.success_count > 0) {
+      ElMessage.success(`成功导入 ${data.success_count} 个账号`);
+      refreshStaffData();
+      clearImportSelection();
+    }
+    if (data.errors.length) {
+      ElMessage.warning(`有 ${data.errors.length} 行导入失败，请查看下方列表`);
+    }
+  } catch (error: any) {
+    const message = error?.response?.data?.detail;
+    ElMessage.error(message || "导入失败");
+  } finally {
+    importing.value = false;
+  }
 }
 
 function formatDate(value: string) {
@@ -624,11 +819,7 @@ function handleCreateWard() {
     return;
   }
   if (!wardForm.type.trim()) {
-    ElMessage.warning("请填写病房类型");
-    return;
-  }
-  if (!wardForm.bed_count || wardForm.bed_count <= 0) {
-    ElMessage.warning("床位数必须大于 0");
+    ElMessage.warning("请选择病房类型");
     return;
   }
   wardCreating.value = true;
@@ -859,5 +1050,55 @@ watch(
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+}
+
+
+.import-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.import-instructions {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.import-instructions p {
+  margin: 0;
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.upload-area {
+  flex: 1;
+  min-width: 220px;
+}
+
+.upload-tip {
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.upload-icon {
+  font-size: 32px;
+  color: #2563eb;
+  margin-bottom: 8px;
+}
+
+.import-summary {
+  margin-top: 16px;
+}
+
+.import-error-table {
+  margin-top: 16px;
 }
 </style>
