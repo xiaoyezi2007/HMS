@@ -1,15 +1,61 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from typing import List
+from typing import Dict, List
+from datetime import datetime, timedelta
+import math
 
 from app.core.config import get_session
 from app.api.deps import get_current_user, get_current_user_phone
 from app.models.hospital import Doctor, Medicine, Prescription, PrescriptionDetail, MedicalRecord, Registration, RegStatus
 from app.models.user import UserAccount, UserRole
-from app.schemas.pharmacy import PrescriptionCreate, PrescriptionRead, MedicinePurchase, MedicineCreate
+from app.schemas.pharmacy import (
+    PrescriptionCreate,
+    PrescriptionRead,
+    MedicinePurchase,
+    MedicineCreate,
+    MedicineInventory,
+)
 
 router = APIRouter()
+
+USAGE_WINDOW_DAYS = 30
+PLANNING_HORIZON_DAYS = 7
+
+
+def _build_inventory_view(med: Medicine, usage_map: Dict[int, int]) -> MedicineInventory:
+    usage_30d = int(usage_map.get(med.medicine_id, 0) or 0)
+    avg_daily = usage_30d / USAGE_WINDOW_DAYS if usage_30d else 0.0
+    expected_week_usage = math.ceil(avg_daily * PLANNING_HORIZON_DAYS)
+    suggested_restock = max(expected_week_usage - med.stock, 0)
+    return MedicineInventory(
+        medicine_id=med.medicine_id,
+        name=med.name,
+        price=med.price,
+        stock=med.stock,
+        unit=med.unit,
+        usage_30d=usage_30d,
+        avg_daily_usage=round(avg_daily, 2),
+        expected_week_usage=expected_week_usage,
+        suggested_restock=suggested_restock,
+        needs_restock=suggested_restock > 0,
+    )
+
+
+async def _load_usage_map(session: AsyncSession) -> Dict[int, int]:
+    cutoff = datetime.now() - timedelta(days=USAGE_WINDOW_DAYS)
+    stmt = (
+        select(
+            PrescriptionDetail.medicine_id,
+            func.coalesce(func.sum(PrescriptionDetail.quantity), 0),
+        )
+        .join(Prescription, PrescriptionDetail.pres_id == Prescription.pres_id)
+        .where(Prescription.create_time >= cutoff)
+        .group_by(PrescriptionDetail.medicine_id)
+    )
+    rows = await session.execute(stmt)
+    return {medicine_id: int(total or 0) for medicine_id, total in rows.all()}
 
 
 # 简单的医生验证
@@ -31,9 +77,33 @@ async def get_current_pharmacist(
     return current_user
 
 
-@router.get("/medicines", response_model=List[Medicine])
+@router.get("/medicines", response_model=List[MedicineInventory])
 async def get_medicines(session: AsyncSession = Depends(get_session)):
-    return (await session.execute(select(Medicine))).scalars().all()
+    meds = (await session.execute(select(Medicine))).scalars().all()
+    usage_map = await _load_usage_map(session)
+    return [_build_inventory_view(med, usage_map) for med in meds]
+
+
+@router.post("/medicines/replenish", response_model=List[MedicineInventory])
+async def replenish_medicines(
+    pharmacist: UserAccount = Depends(get_current_pharmacist),
+    session: AsyncSession = Depends(get_session),
+):
+    meds = (await session.execute(select(Medicine))).scalars().all()
+    usage_map = await _load_usage_map(session)
+    restocked = False
+    for med in meds:
+        view = _build_inventory_view(med, usage_map)
+        if view.suggested_restock > 0:
+            med.stock += view.suggested_restock
+            session.add(med)
+            restocked = True
+    if restocked:
+        await session.commit()
+        meds = (await session.execute(select(Medicine))).scalars().all()
+    else:
+        await session.rollback()
+    return [_build_inventory_view(med, usage_map) for med in meds]
 
 
 @router.post("/medicines/purchase", response_model=Medicine)
@@ -74,7 +144,6 @@ async def create_medicine(
         price=payload.price,
         stock=payload.stock,
         unit=payload.unit,
-        expire_date=payload.expire_date
     )
     session.add(med)
     await session.commit()

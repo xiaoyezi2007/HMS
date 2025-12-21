@@ -38,7 +38,6 @@
                       <el-table-column prop="price" label="价格(¥)" width="120" />
                       <el-table-column prop="stock" label="库存" width="100" />
                       <el-table-column prop="unit" label="单位" width="100" />
-                      <el-table-column prop="expire_date" label="有效期" width="150" />
                       <el-table-column label="数量" width="200" align="center">
                         <template #default="{ row }">
                           <el-input-number v-model="medSettings[row.medicine_id].quantity" :min="1" controls-position="right" style="width:120px;" />

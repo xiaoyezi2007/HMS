@@ -143,7 +143,6 @@ class Medicine(SQLModel, table=True):
     price: float = Field(default=0.0)
     stock: int = Field(default=0)
     unit: str = Field(max_length=10)
-    expire_date: date
 
 # --- 13. 处方表 ---
 class Prescription(SQLModel, table=True):

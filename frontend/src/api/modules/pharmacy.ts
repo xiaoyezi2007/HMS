@@ -6,7 +6,11 @@ export interface MedicineItem {
   price: number;
   stock: number;
   unit: string;
-  expire_date: string;
+  usage_30d: number;
+  avg_daily_usage: number;
+  expected_week_usage: number;
+  suggested_restock: number;
+  needs_restock: boolean;
 }
 
 export interface PrescriptionItemPayload {
@@ -30,7 +34,6 @@ export interface MedicineCreatePayload {
   price: number;
   stock: number;
   unit: string;
-  expire_date: string;
 }
 
 export function fetchMedicines() {
@@ -51,4 +54,8 @@ export function purchaseMedicine(payload: MedicinePurchasePayload) {
 
 export function createMedicine(payload: MedicineCreatePayload) {
   return http.post<MedicineItem>("/api/pharmacy/medicines", payload);
+}
+
+export function replenishMedicines() {
+  return http.post<MedicineItem[]>("/api/pharmacy/medicines/replenish");
 }

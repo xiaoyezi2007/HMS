@@ -4,39 +4,69 @@
       <template #header>
         <div class="card-header">
           <span>库存预警</span>
-          <small>低于 {{ lowStockThreshold }} 的药品会在此处提示</small>
+          <small>库存低于 {{ lowStockThreshold }} 或无法覆盖未来 {{ planningHorizonDays }} 天需求的药品会在此处提示</small>
         </div>
       </template>
       <div v-if="lowStockList.length">
         <el-alert
-          title="以下药品库存较低，建议立即采购"
+          title="以下药品库存紧张，建议按照用量建议尽快补足"
           type="warning"
           show-icon
           :closable="false"
         >
           <template #description>
             <el-table :data="lowStockList" size="mini" stripe>
-              <el-table-column prop="name" label="药品" />
-              <el-table-column prop="stock" label="库存" width="120">
+              <el-table-column prop="name" label="药品" min-width="140" />
+              <el-table-column prop="unit" label="单位" width="80" />
+              <el-table-column prop="stock" label="库存" width="90">
                 <template #default="{ row }">
                   <el-tag type="danger">{{ row.stock }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="unit" label="单位" width="100" />
-              <el-table-column prop="expire_date" label="有效期" width="130" />
+              <el-table-column label="近30天用量" width="120">
+                <template #default="{ row }">
+                  {{ row.usage_30d || 0 }}
+                </template>
+              </el-table-column>
+              <el-table-column label="预计7天用量" width="120">
+                <template #default="{ row }">
+                  {{ row.expected_week_usage }}
+                </template>
+              </el-table-column>
+              <el-table-column label="建议补货" width="150">
+                <template #default="{ row }">
+                  <el-tag v-if="row.suggested_restock" type="warning">补 {{ row.suggested_restock }} {{ row.unit }}</el-tag>
+                  <span v-else>--</span>
+                </template>
+              </el-table-column>
             </el-table>
           </template>
         </el-alert>
         <div class="warning-table-wrapper">
           <el-table :data="lowStockList" size="small" border>
-            <el-table-column prop="name" label="药品" />
-            <el-table-column prop="stock" label="库存" width="120">
+            <el-table-column prop="name" label="药品" min-width="160" />
+            <el-table-column prop="unit" label="单位" width="90" />
+            <el-table-column prop="stock" label="库存" width="110">
               <template #default="{ row }">
                 <el-tag type="danger">{{ row.stock }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="unit" label="单位" width="100" />
-            <el-table-column prop="expire_date" label="有效期" width="130" />
+            <el-table-column label="近30天用量" width="140">
+              <template #default="{ row }">
+                {{ row.usage_30d || 0 }}
+              </template>
+            </el-table-column>
+            <el-table-column label="预计7天用量" width="140">
+              <template #default="{ row }">
+                {{ row.expected_week_usage }}
+              </template>
+            </el-table-column>
+            <el-table-column label="建议补货" width="170">
+              <template #default="{ row }">
+                <el-tag v-if="row.suggested_restock" type="warning">补 {{ row.suggested_restock }} {{ row.unit }}</el-tag>
+                <span v-else>--</span>
+              </template>
+            </el-table-column>
           </el-table>
         </div>
       </div>
@@ -81,16 +111,6 @@
           </el-col>
         </el-row>
         <el-row :gutter="16" align="middle">
-          <el-col :xs="24" :sm="12" :md="8">
-            <el-form-item label="有效期">
-              <el-date-picker
-                v-model="createForm.expire_date"
-                type="date"
-                placeholder="选择日期"
-                value-format="YYYY-MM-DD"
-              />
-            </el-form-item>
-          </el-col>
           <el-col :xs="24" :sm="12" :md="6" class="form-actions">
             <el-button type="primary" :loading="createLoading" @click="submitCreate">新增药品</el-button>
           </el-col>
@@ -133,23 +153,53 @@
 
     <el-card>
       <template #header>
-        <div class="card-header">
-          <span>药品库存</span>
-          <small>实时反映库存数量与有效期</small>
+        <div class="card-header card-header--row">
+          <div>
+            <span>药品库存</span>
+            <small>结合近 {{ usageWindowDays }} 天用量给出 {{ planningHorizonDays }} 天补货建议</small>
+          </div>
+          <el-button
+            type="warning"
+            plain
+            :loading="restockLoading"
+            :disabled="!needsRestockCount"
+            @click="handleReplenish"
+          >
+            一键补足{{ planningHorizonDays }}天库存
+            <span v-if="needsRestockCount"> ({{ needsRestockCount }})</span>
+          </el-button>
         </div>
       </template>
       <el-table :data="medicines" border>
-        <el-table-column prop="name" label="名称" />
-        <el-table-column prop="unit" label="单位" width="100" />
-        <el-table-column prop="price" label="单价" width="120">
+        <el-table-column prop="name" label="名称" min-width="160" />
+        <el-table-column prop="unit" label="单位" width="90" />
+        <el-table-column prop="price" label="单价" width="110">
           <template #default="{ row }">￥{{ row.price.toFixed(2) }}</template>
         </el-table-column>
-        <el-table-column prop="stock" label="库存" width="120">
+        <el-table-column prop="stock" label="库存" width="110">
           <template #default="{ row }">
-            <el-tag :type="row.stock < lowStockThreshold ? 'danger' : 'success'">{{ row.stock }}</el-tag>
+            <el-tag :type="row.needs_restock || row.stock < lowStockThreshold ? 'danger' : 'success'">{{ row.stock }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="expire_date" label="有效期" width="160" />
+        <el-table-column label="近30天用量" width="140">
+          <template #default="{ row }">
+            {{ row.usage_30d || 0 }}
+          </template>
+        </el-table-column>
+        <el-table-column label="日均/预计" width="180">
+          <template #default="{ row }">
+            <div class="usage-cell">
+              <span>日均 {{ row.avg_daily_usage ? row.avg_daily_usage.toFixed(2) : '0.00' }}</span>
+              <span>七天 {{ row.expected_week_usage }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="建议补货" width="150">
+          <template #default="{ row }">
+            <el-tag v-if="row.suggested_restock" type="warning">补 {{ row.suggested_restock }} {{ row.unit }}</el-tag>
+            <span v-else>--</span>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
   </div>
@@ -158,7 +208,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { fetchMedicines, purchaseMedicine, createMedicine, type MedicineItem } from "../../api/modules/pharmacy";
+import { fetchMedicines, purchaseMedicine, createMedicine, replenishMedicines, type MedicineItem } from "../../api/modules/pharmacy";
 
 const medicines = ref<MedicineItem[]>([]);
 const purchaseForm = reactive({
@@ -169,14 +219,19 @@ const createForm = reactive({
   name: "",
   price: 0,
   stock: 0,
-  unit: "",
-  expire_date: ""
+  unit: ""
 });
 const purchaseLoading = ref(false);
 const createLoading = ref(false);
 const lowStockThreshold = 50;
+const usageWindowDays = 30;
+const planningHorizonDays = 7;
+const restockLoading = ref(false);
 
-const lowStockList = computed(() => medicines.value.filter((med) => med.stock < lowStockThreshold));
+const lowStockList = computed(() =>
+  medicines.value.filter((med) => med.needs_restock || med.stock < lowStockThreshold)
+);
+const needsRestockCount = computed(() => medicines.value.filter((med) => med.suggested_restock > 0).length);
 
 async function loadMedicines() {
   try {
@@ -223,10 +278,6 @@ async function submitCreate() {
     ElMessage.warning("请填写单位");
     return;
   }
-  if (!createForm.expire_date) {
-    ElMessage.warning("请选择有效期");
-    return;
-  }
   if (createForm.price < 0) {
     ElMessage.warning("单价不能为负数");
     return;
@@ -241,17 +292,34 @@ async function submitCreate() {
       name: createForm.name.trim(),
       price: createForm.price,
       stock: createForm.stock,
-      unit: createForm.unit.trim(),
-      expire_date: createForm.expire_date
+      unit: createForm.unit.trim()
     });
     ElMessage.success("新增药品成功");
-    Object.assign(createForm, { name: "", price: 0, stock: 0, unit: "", expire_date: "" });
+    Object.assign(createForm, { name: "", price: 0, stock: 0, unit: "" });
     await loadMedicines();
   } catch (error: any) {
     console.error("create medicine error", error);
     ElMessage.error(error.response?.data?.detail ?? "新增药品失败");
   } finally {
     createLoading.value = false;
+  }
+}
+
+async function handleReplenish() {
+  if (!needsRestockCount.value) {
+    ElMessage.success("所有药品库存已满足建议");
+    return;
+  }
+  restockLoading.value = true;
+  try {
+    const { data } = await replenishMedicines();
+    medicines.value = data;
+    ElMessage.success("已根据用量建议补足库存");
+  } catch (error: any) {
+    console.error("replenish error", error);
+    ElMessage.error(error.response?.data?.detail ?? "补足库存失败");
+  } finally {
+    restockLoading.value = false;
   }
 }
 
@@ -268,6 +336,19 @@ onMounted(loadMedicines);
 .card-header {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+}
+
+.card-header--row {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-header--row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .warning-card {
@@ -286,5 +367,17 @@ onMounted(loadMedicines);
 .form-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.usage-cell {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #606266;
+}
+
+.usage-cell span + span {
+  margin-top: 2px;
 }
 </style>

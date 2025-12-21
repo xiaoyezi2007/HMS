@@ -10,7 +10,7 @@ from app.api import auth, patient_service, doctor_service, nurse_service, pharma
 # 导入模型
 from app.models.user import UserAccount, UserRole
 from app.models.hospital import Department, Doctor, Gender, Medicine, Nurse, Ward, NurseSchedule
-from datetime import date, datetime
+from datetime import datetime
 
 
 async def init_data():
@@ -52,7 +52,7 @@ async def init_data():
 
         # 2. 药品
         if not (await session.execute(select(Medicine))).scalars().first():
-            session.add(Medicine(name="布洛芬", price=30.0, stock=100, unit="盒", expire_date=date(2025, 12, 1)))
+            session.add(Medicine(name="布洛芬", price=30.0, stock=100, unit="盒"))
             await session.commit()
 
         # 3. 护士与病房
