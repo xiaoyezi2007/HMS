@@ -44,6 +44,15 @@ class WardOverviewItem(SQLModel):
     bed_count: int
 
 
+class TodayTaskItem(SQLModel):
+    task_id: int
+    patient_name: str
+    type: str
+    time: datetime
+    status: str
+    nurse_name: str
+
+
 class WardRecordItem(SQLModel):
     ward_id: int
     ward_type: str
@@ -55,6 +64,16 @@ class WardRecordItem(SQLModel):
     diagnosis: str
     suggestion: Optional[str] = None
     in_date: datetime
+
+
+class WardTaskItem(SQLModel):
+    task_id: int
+    hosp_id: int
+    patient_name: str
+    type: str
+    time: datetime
+    status: str
+    nurse_name: str
 
 
 class HeadScheduleContext(SQLModel):

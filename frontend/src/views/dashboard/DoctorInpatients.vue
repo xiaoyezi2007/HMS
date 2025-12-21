@@ -89,6 +89,7 @@
             value-format="YYYY-MM-DDTHH:mm:ss"
             format="YYYY-MM-DD HH:mm"
             teleported
+            :disabled-date="disablePast"
             style="width: 100%"
           />
         </el-form-item>
@@ -417,6 +418,10 @@ function openTaskDialog(row: DoctorInpatientItem) {
   activeHospId.value = row.hosp_id;
   taskForm.value = { type: taskForm.value.type || "输液", time: formatDateTimeLocal() };
   taskVisible.value = true;
+}
+
+function disablePast(date: Date) {
+  return date.getTime() < Date.now() - 60 * 1000; // allow from current minute onwards
 }
 
 async function submitTask() {

@@ -466,6 +466,9 @@ async def create_nurse_task(
     doctor: Doctor = Depends(get_current_doctor),
     session: AsyncSession = Depends(get_session)
 ):
+    if payload.time <= datetime.now():
+        raise HTTPException(status_code=400, detail="预计完成时间需晚于当前时间")
+
     hospitalization = await session.get(Hospitalization, hosp_id)
     if not hospitalization:
         raise HTTPException(status_code=404, detail="住院记录不存在")

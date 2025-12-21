@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete
+from sqlalchemy import and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -33,6 +34,8 @@ from app.schemas.nurse import (
     WardRecordItem,
     ScheduleUpsertPayload,
     AutoScheduleRequest,
+    TodayTaskItem,
+    WardTaskItem,
 )
 
 HOSPITAL_HOURLY_RATE = 80.0
@@ -78,11 +81,72 @@ async def assign_tasks_to_ward(session: AsyncSession, ward_id: int, nurse_id: in
         session.add(task)
 
 
+async def _expire_overdue_tasks(session: AsyncSession, task_ids: list[int]) -> None:
+    if not task_ids:
+        return
+    now = datetime.now()
+    stmt = select(NurseTask).where(NurseTask.task_id.in_(task_ids))
+    tasks = (await session.execute(stmt)).scalars().all()
+    dirty = False
+    for task in tasks:
+        if task.status == "未完成" and task.time < now:
+            task.status = "已过期"
+            session.add(task)
+            dirty = True
+    if dirty:
+        await session.commit()
+
+
 @router.get("/profile", response_model=NurseProfile)
 async def get_nurse_profile(
     nurse: Nurse = Depends(get_current_nurse)
 ):
     return NurseProfile(nurse_id=nurse.nurse_id, name=nurse.name, is_head_nurse=nurse.is_head_nurse)
+
+
+@router.get("/today_tasks", response_model=List[TodayTaskItem])
+async def list_today_tasks(
+    nurse: Nurse = Depends(get_current_nurse),
+    session: AsyncSession = Depends(get_session)
+):
+    today = datetime.now().date()
+    start = datetime.combine(today, datetime.min.time())
+    end = start + timedelta(days=1)
+
+    stmt = (
+        select(NurseTask, Patient, Nurse)
+        .join(Hospitalization, NurseTask.hosp_id == Hospitalization.hosp_id)
+        .join(MedicalRecord, Hospitalization.record_id == MedicalRecord.record_id)
+        .join(Registration, MedicalRecord.reg_id == Registration.reg_id)
+        .join(Patient, Registration.patient_id == Patient.patient_id)
+        .join(Nurse, NurseTask.nurse_id == Nurse.nurse_id)
+        .where(NurseTask.time >= start, NurseTask.time < end)
+    )
+
+    if not nurse.is_head_nurse:
+        stmt = stmt.where(NurseTask.nurse_id == nurse.nurse_id)
+
+    rows = (await session.execute(stmt)).all()
+    task_ids = [t.task_id for t, _, _ in rows]
+    await _expire_overdue_tasks(session, task_ids)
+
+    payload: List[TodayTaskItem] = []
+    now = datetime.now()
+    for task, patient, nurse_row in rows:
+        status = task.status
+        if status == "未完成" and task.time < now:
+            status = "已过期"
+        payload.append(TodayTaskItem(
+            task_id=task.task_id,
+            patient_name=patient.name,
+            type=task.type,
+            time=task.time,
+            status=status,
+            nurse_name=nurse_row.name,
+        ))
+
+    payload.sort(key=lambda item: item.time)
+    return payload
 
 
 @router.get("/my_schedules", response_model=List[ScheduleRead])
@@ -200,6 +264,66 @@ async def list_ward_records(
             in_date=hosp.in_date,
         ))
     return records
+
+
+@router.get("/ward/{ward_id}/tasks", response_model=List[WardTaskItem])
+async def list_ward_tasks(
+        ward_id: int,
+        nurse: Nurse = Depends(get_current_nurse),
+        session: AsyncSession = Depends(get_session)
+):
+    ward = await session.get(Ward, ward_id)
+    if not ward:
+        raise HTTPException(status_code=404, detail="病房不存在")
+
+    if not nurse.is_head_nurse:
+        assigned_stmt = select(NurseSchedule).where(
+            NurseSchedule.nurse_id == nurse.nurse_id,
+            NurseSchedule.ward_id == ward_id
+        )
+        assigned = (await session.execute(assigned_stmt)).scalars().first()
+        if not assigned:
+            raise HTTPException(status_code=403, detail="无权查看该病房")
+
+    hosp_stmt = select(Hospitalization.hosp_id).where(
+        Hospitalization.ward_id == ward_id,
+        Hospitalization.status == "在院",
+    )
+    hosp_ids = (await session.execute(hosp_stmt)).scalars().all()
+    if not hosp_ids:
+        return []
+
+    stmt = (
+        select(NurseTask, Patient, Nurse)
+        .join(Hospitalization, NurseTask.hosp_id == Hospitalization.hosp_id)
+        .join(MedicalRecord, Hospitalization.record_id == MedicalRecord.record_id)
+        .join(Registration, MedicalRecord.reg_id == Registration.reg_id)
+        .join(Patient, Registration.patient_id == Patient.patient_id)
+        .join(Nurse, NurseTask.nurse_id == Nurse.nurse_id)
+        .where(NurseTask.hosp_id.in_(hosp_ids))
+        .order_by(NurseTask.time.asc(), NurseTask.task_id.asc())
+    )
+
+    rows = (await session.execute(stmt)).all()
+    task_ids = [t.task_id for t, _, _ in rows]
+    await _expire_overdue_tasks(session, task_ids)
+
+    now = datetime.now()
+    payload: List[WardTaskItem] = []
+    for task, patient, nurse_row in rows:
+        status = task.status
+        if status == "未完成" and task.time < now:
+            status = "已过期"
+        payload.append(WardTaskItem(
+            task_id=task.task_id,
+            hosp_id=task.hosp_id,
+            patient_name=patient.name,
+            type=task.type,
+            time=task.time,
+            status=status,
+            nurse_name=nurse_row.name,
+        ))
+    return payload
 
 
 @router.post("/head/schedules/upsert")
@@ -326,6 +450,33 @@ async def auto_generate_schedules(
     await session.commit()
     total_records = len(wards) * shift_count
     return {"detail": f"已自动生成 {total_records} 条排班记录"}
+
+
+@router.post("/tasks/{task_id}/complete")
+async def complete_task(
+        task_id: int,
+        nurse: Nurse = Depends(get_current_nurse),
+        session: AsyncSession = Depends(get_session)
+):
+    task = await session.get(NurseTask, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    if not nurse.is_head_nurse and task.nurse_id != nurse.nurse_id:
+        raise HTTPException(status_code=403, detail="仅负责该任务的护士可以完成")
+
+    if task.status == "已完成":
+        return {"detail": "任务已完成"}
+
+    now = datetime.now()
+    if task.time < now and task.status == "未完成":
+        task.status = "已过期"
+    else:
+        task.status = "已完成"
+
+    session.add(task)
+    await session.commit()
+    return {"detail": "任务状态已更新", "status": task.status}
 
 
 @router.get("/head/inpatients")

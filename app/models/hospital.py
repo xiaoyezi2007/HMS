@@ -129,6 +129,7 @@ class NurseTask(SQLModel, table=True):
     task_id: Optional[int] = Field(default=None, primary_key=True)
     type: str = Field(max_length=100, description="检查/任务类型")
     time: datetime = Field(description="需要完成的时间")
+    status: str = Field(default="未完成", max_length=20, description="任务状态：未完成/已完成/已过期")
     nurse_id: int = Field(foreign_key="nurse.nurse_id")
     hosp_id: int = Field(foreign_key="hospitalization.hosp_id")
 

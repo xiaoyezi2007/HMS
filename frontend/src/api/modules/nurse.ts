@@ -53,6 +53,16 @@ export interface WardRecordItem {
   in_date: string;
 }
 
+export interface WardTaskItem {
+  task_id: number;
+  hosp_id: number;
+  patient_name: string;
+  type: string;
+  time: string;
+  status: string;
+  nurse_name: string;
+}
+
 export interface HeadScheduleContext {
   wards: WardScheduleGroup[];
   nurses: NurseOption[];
@@ -91,6 +101,15 @@ export interface DischargeResponse {
   payment_id: number;
 }
 
+export interface TodayTaskItem {
+  task_id: number;
+  patient_name: string;
+  type: string;
+  time: string;
+  status: string;
+  nurse_name: string;
+}
+
 export function fetchMySchedules() {
   return http.get<NurseScheduleItem[]>("/api/nurse/my_schedules");
 }
@@ -111,6 +130,10 @@ export function fetchWardRecords(wardId: number) {
   return http.get<WardRecordItem[]>(`/api/nurse/ward/${wardId}/records`);
 }
 
+export function fetchWardTasks(wardId: number) {
+  return http.get<WardTaskItem[]>(`/api/nurse/ward/${wardId}/tasks`);
+}
+
 export function upsertWardSchedule(payload: ScheduleUpsertPayload) {
   return http.post("/api/nurse/head/schedules/upsert", payload);
 }
@@ -129,4 +152,12 @@ export function fetchHeadInpatients() {
 
 export function dischargeInpatient(hospId: number) {
   return http.post<DischargeResponse>(`/api/nurse/head/hospitalizations/${hospId}/discharge`);
+}
+
+export function fetchTodayTasks() {
+  return http.get<TodayTaskItem[]>("/api/nurse/today_tasks");
+}
+
+export function completeTask(taskId: number) {
+  return http.post(`/api/nurse/tasks/${taskId}/complete`);
 }

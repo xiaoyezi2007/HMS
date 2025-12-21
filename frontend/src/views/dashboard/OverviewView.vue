@@ -45,6 +45,36 @@
             <div class="record-field"><strong>主诉：</strong>{{ item.complaint }}</div>
             <div class="record-field"><strong>诊断：</strong>{{ item.diagnosis }}</div>
             <div class="record-field" v-if="item.suggestion"><strong>建议：</strong>{{ item.suggestion }}</div>
+
+            <el-divider content-position="left">护理任务</el-divider>
+            <el-empty
+              v-if="!tasksForHosp(item.hosp_id).length"
+              description="暂无护理任务"
+              :image-size="60"
+            />
+            <el-table
+              v-else
+              :data="tasksForHosp(item.hosp_id)"
+              size="small"
+              border
+              :show-header="true"
+              class="task-table"
+            >
+              <el-table-column prop="type" label="项目" width="120" />
+              <el-table-column label="时间" min-width="160">
+                <template #default="scope">
+                  {{ formatDate(scope.row.time) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="110">
+                <template #default="scope">
+                  <el-tag :type="formatTaskStatus(scope.row.status).type" effect="plain">
+                    {{ formatTaskStatus(scope.row.status).label }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="护士" width="120" prop="nurse_name" />
+            </el-table>
           </el-card>
         </div>
       </el-drawer>
@@ -101,7 +131,7 @@
 import { computed, onMounted, ref } from "vue";
 import { Reading, UserFilled, Suitcase, Histogram } from "@element-plus/icons-vue";
 import { useAuthStore } from "../../stores/auth";
-import { fetchWardOverview, fetchWardRecords, type WardOverviewItem, type WardRecordItem } from "../../api/modules/nurse";
+import { fetchWardOverview, fetchWardRecords, fetchWardTasks, type WardOverviewItem, type WardRecordItem, type WardTaskItem } from "../../api/modules/nurse";
 
 const auth = useAuthStore();
 const isNurseRole = computed(() => auth.currentRole === "护士");
@@ -110,6 +140,7 @@ const isLoading = ref(false);
 const recordVisible = ref(false);
 const recordLoading = ref(false);
 const wardRecords = ref<WardRecordItem[]>([]);
+const wardTasks = ref<WardTaskItem[]>([]);
 const activeWard = ref<WardOverviewItem | null>(null);
 
 const featureCards = [
@@ -166,9 +197,21 @@ async function handleWardClick(ward: WardOverviewItem) {
   try {
     const { data } = await fetchWardRecords(ward.ward_id);
     wardRecords.value = data;
+    const taskRes = await fetchWardTasks(ward.ward_id);
+    wardTasks.value = taskRes.data;
   } finally {
     recordLoading.value = false;
   }
+}
+
+function tasksForHosp(hospId: number) {
+  return wardTasks.value.filter((t) => t.hosp_id === hospId);
+}
+
+function formatTaskStatus(status: string) {
+  if (status === "已完成") return { type: "success", label: status };
+  if (status === "已过期") return { type: "danger", label: status };
+  return { type: "warning", label: status };
 }
 
 onMounted(() => {
@@ -331,5 +374,9 @@ onMounted(() => {
 .card-icon :deep(svg) {
   width: 24px;
   height: 24px;
+}
+
+.task-table {
+  margin-top: 6px;
 }
 </style>
