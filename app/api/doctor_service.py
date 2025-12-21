@@ -648,14 +648,12 @@ async def generate_transfer_form(
 
     lines = [
         "转院申请单",
-        f"挂号ID：{registration.reg_id}",
-        f"患者：{patient.name}（ID: {patient.patient_id}）", 
+        f"患者：{patient.name}",
         f"联系方式：{patient.phone}",
         "",
         "【挂号信息】",
         f"挂号时间：{format_datetime(registration.reg_date)}",
-        f"挂号类型：{registration.reg_type}",
-        f"挂号状态：{registration.status}",
+        f"就诊日期：{registration.visit_date.strftime('%Y-%m-%d') if registration.visit_date else ''}",
         "",
         "【病历摘要】"
     ]
