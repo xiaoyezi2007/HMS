@@ -179,6 +179,34 @@
         <el-button type="primary" :loading="editSubmitting" @click="submitEdit">保 存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="overdueVisible"
+      title="过期待办提醒"
+      width="560px"
+      :close-on-click-modal="false"
+    >
+      <el-alert title="以下代办已过期，请尽快处理" type="warning" :closable="false" show-icon />
+      <div class="overdue-list" v-loading="overdueLoading">
+        <div v-for="task in overdueTasks" :key="task.task_id" class="overdue-item">
+          <div class="overdue-meta">
+            <span>{{ task.patient_name }} · {{ task.type }}</span>
+            <small>{{ formatTaskTime(task.time) }} · {{ task.nurse_name }}</small>
+          </div>
+          <el-button
+            type="danger"
+            size="small"
+            :loading="overdueHandleId === task.task_id"
+            @click="handleOverdue(task.task_id)"
+          >处理</el-button>
+        </div>
+        <el-empty v-if="!overdueTasks.length && !overdueLoading" description="暂无过期待办" />
+      </div>
+      <template #footer>
+        <el-button @click="overdueVisible = false">稍后处理</el-button>
+        <el-button type="primary" @click="loadOverdueTasks(false)">刷新列表</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -192,13 +220,17 @@ import {
   autoArrangeSchedules,
   fetchHeadInpatients,
   dischargeInpatient,
+  fetchTodayTasks,
+  completeTask,
   type HeadScheduleContext,
   type WardScheduleGroup,
   type NurseOption,
   type ScheduleUpsertPayload,
   type AutoSchedulePayload,
-  type InpatientItem
+  type InpatientItem,
+  type TodayTaskItem
 } from "../../api/modules/nurse";
+import { addIgnoredExpiredTaskId, loadIgnoredExpiredTaskIds } from "../../utils/ignoredTasks";
 
 interface TableRow {
   key: string;
@@ -220,6 +252,10 @@ const deleteLoadingId = ref<string | null>(null);
 const inpatients = ref<InpatientItem[]>([]);
 const inpatientsLoading = ref(false);
 const dischargeLoadingId = ref<number | null>(null);
+const overdueVisible = ref(false);
+const overdueLoading = ref(false);
+const overdueTasks = ref<TodayTaskItem[]>([]);
+const overdueHandleId = ref<number | null>(null);
 
 const autoForm = reactive({
   start_time: dayjs().minute(0).second(0).millisecond(0).format("YYYY-MM-DDTHH:mm:ss"),
@@ -298,6 +334,45 @@ function formatStayDuration(hours: number) {
   }
   const days = hours / 24;
   return `${days.toFixed(1)} 天`;
+}
+
+function formatTaskTime(value: string) {
+  return dayjs(value).format("YYYY-MM-DD HH:mm");
+}
+
+async function loadOverdueTasks(autoOpen = true) {
+  overdueLoading.value = true;
+  try {
+    const { data } = await fetchTodayTasks();
+    const ignored = loadIgnoredExpiredTaskIds();
+    overdueTasks.value = data
+      .filter((t) => t.status === "已过期" && !ignored.has(t.task_id))
+      .sort((a, b) => dayjs(a.time).valueOf() - dayjs(b.time).valueOf());
+    if (autoOpen && overdueTasks.value.length) {
+      overdueVisible.value = true;
+    }
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.detail ?? "加载过期待办失败");
+  } finally {
+    overdueLoading.value = false;
+  }
+}
+
+async function handleOverdue(taskId: number) {
+  overdueHandleId.value = taskId;
+  try {
+    await completeTask(taskId);
+    addIgnoredExpiredTaskId(taskId);
+    overdueTasks.value = overdueTasks.value.filter((t) => t.task_id !== taskId);
+    if (!overdueTasks.value.length) {
+      overdueVisible.value = false;
+    }
+    ElMessage.success("已处理该过期待办");
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.detail ?? "处理失败");
+  } finally {
+    overdueHandleId.value = null;
+  }
 }
 
 async function loadContext() {
@@ -536,5 +611,28 @@ onMounted(() => {
 
 .inpatient-table .el-button {
   width: 100%;
+}
+
+.overdue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overdue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid #fde2e2;
+  border-radius: 6px;
+  background: #fff7f5;
+}
+
+.overdue-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #d4380d;
 }
 </style>

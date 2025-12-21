@@ -36,7 +36,7 @@
           <el-card v-for="item in wardRecords" :key="item.record_id" shadow="hover" class="record-card">
             <div class="record-card__header">
               <div class="record-patient">{{ item.patient_name }}</div>
-              <el-tag size="small" type="primary">病历 #{{ item.record_id }}</el-tag>
+              <el-tag size="small" type="primary">病历 {{ item.record_id }}</el-tag>
             </div>
             <div class="record-meta">
               <span>住院号：{{ item.hosp_id }}</span>
@@ -204,8 +204,21 @@ async function handleWardClick(ward: WardOverviewItem) {
   }
 }
 
+function statusRank(status: string) {
+  if (status === "未完成") return 0;
+  if (status === "已过期") return 1;
+  return 2;
+}
+
 function tasksForHosp(hospId: number) {
-  return wardTasks.value.filter((t) => t.hosp_id === hospId);
+  return wardTasks.value
+    .filter((t) => t.hosp_id === hospId)
+    .slice()
+    .sort((a, b) => {
+      const rankDiff = statusRank(a.status) - statusRank(b.status);
+      if (rankDiff !== 0) return rankDiff;
+      return new Date(a.time).getTime() - new Date(b.time).getTime();
+    });
 }
 
 function formatTaskStatus(status: string) {

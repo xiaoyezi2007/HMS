@@ -194,7 +194,11 @@ async def get_my_schedules(
     nurse: Nurse = Depends(get_current_nurse),
     session: AsyncSession = Depends(get_session)
 ):
-    stmt = select(NurseSchedule, Ward).join(Ward).where(NurseSchedule.nurse_id == nurse.nurse_id)
+    now = datetime.now()
+    stmt = select(NurseSchedule, Ward).join(Ward).where(
+        NurseSchedule.nurse_id == nurse.nurse_id,
+        NurseSchedule.end_time >= now
+    )
     results = await session.execute(stmt)
 
     schedule_list = []
@@ -223,7 +227,10 @@ async def get_head_schedule_context(
         ward_map[ward.ward_id] = group
         ward_payload.append(group)
 
-    schedule_stmt = select(NurseSchedule, Nurse).join(Nurse, NurseSchedule.nurse_id == Nurse.nurse_id)
+    now = datetime.now()
+    schedule_stmt = select(NurseSchedule, Nurse).join(Nurse, NurseSchedule.nurse_id == Nurse.nurse_id).where(
+        NurseSchedule.end_time >= now
+    )
     schedule_rows = await session.execute(schedule_stmt)
     for schedule, nurse in schedule_rows.all():
         ward_entry = ward_map.get(schedule.ward_id)
@@ -502,6 +509,10 @@ async def complete_task(
 
     if task.status == "已完成":
         return {"detail": "任务已完成"}
+
+    # 若已过期，保持状态不变，仅提示；前端可自行隐藏
+    if task.status == "已过期":
+        return {"detail": "任务已过期", "status": task.status}
 
     now = datetime.now()
     if task.time < now and task.status == "未完成":
