@@ -32,3 +32,9 @@ class UserAccount(SQLModel, table=True):
 
     # 对应 PDF: Status 账户状态 (启用/禁用)
     status: str = Field(default="启用", max_length=10)
+
+
+class RegistrationAttempt(SQLModel, table=True):
+    attempt_id: Optional[int] = Field(default=None, primary_key=True)
+    ip_address: str = Field(max_length=45, index=True, description="请求来源 IP")
+    created_at: datetime = Field(default_factory=datetime.utcnow)

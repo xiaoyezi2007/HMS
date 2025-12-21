@@ -1,23 +1,47 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.config import get_session
 from app.core.security import get_password_hash, verify_password, create_access_token
-from app.models.user import UserAccount
+from app.models.user import UserAccount, RegistrationAttempt
 from app.schemas.user import UserCreate, Token, UserAccountSafe
 from app.schemas.user import ChangePassword
 from app.api.deps import get_current_user
 from app.models.user import UserRole
-from fastapi import Depends
 
 router = APIRouter()
 
 
+def _extract_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    client = request.client
+    return client.host if client else "unknown"
+
+
 # --- 1. 用户注册接口 ---
 @router.post("/register", response_model=UserAccount)
-async def register(user_in: UserCreate, session: AsyncSession = Depends(get_session)):
+async def register(
+    user_in: UserCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_session)
+):
+    ip_address = _extract_client_ip(request)
+    window_start = datetime.utcnow() - timedelta(minutes=1)
+
+    attempt_stmt = select(func.count()).where(
+        RegistrationAttempt.ip_address == ip_address,
+        RegistrationAttempt.created_at >= window_start,
+    )
+    recent_attempts = (await session.execute(attempt_stmt)).scalar_one()
+    if recent_attempts >= 2:
+        raise HTTPException(status_code=429, detail="当前 IP 注册过于频繁，请稍后再试")
     # A. 检查手机号是否已被注册
     result = await session.execute(select(UserAccount).where(UserAccount.phone == user_in.phone))
     if result.scalars().first():
@@ -38,6 +62,7 @@ async def register(user_in: UserCreate, session: AsyncSession = Depends(get_sess
     )
 
     session.add(new_user)
+    session.add(RegistrationAttempt(ip_address=ip_address, created_at=datetime.utcnow()))
     await session.commit()
     await session.refresh(new_user)
     return new_user
