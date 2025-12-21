@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -56,10 +56,28 @@ async def compute_hospitalization_bill(
     total_medicine_fee = 0.0
     total_service_fee = 0.0
 
+    charged_snapshots: Set[str] = set()
+
     for task in tasks:
+        is_completed = task.status == "已完成"
+        raw_snapshot = task.medicine_snapshot or ""
+        snapshot_entries = _safe_load_snapshot(raw_snapshot)
+        snapshot_signature = (
+            f"{raw_snapshot}::{task.detail or ''}"
+            if raw_snapshot and snapshot_entries
+            else None
+        )
+
+        charge_medicines = bool(snapshot_entries)
+        if charge_medicines and snapshot_signature:
+            if snapshot_signature in charged_snapshots:
+                charge_medicines = False
+            else:
+                charged_snapshots.add(snapshot_signature)
+
         medicine_items: List[Dict[str, Any]] = []
         medicine_fee = 0.0
-        for item in _safe_load_snapshot(task.medicine_snapshot):
+        for item in snapshot_entries:
             med_id = item.get("medicine_id")
             quantity = item.get("quantity")
             if not med_id or not quantity:
@@ -69,7 +87,8 @@ async def compute_hospitalization_bill(
                 price_cache[med_id] = float(medicine.price) if medicine else 0.0
             unit_price = price_cache[med_id]
             subtotal = round(unit_price * quantity, 2)
-            medicine_fee += subtotal
+            if charge_medicines:
+                medicine_fee += subtotal
             medicine_items.append({
                 "medicine_id": med_id,
                 "name": item.get("name"),
@@ -79,15 +98,19 @@ async def compute_hospitalization_bill(
                 "subtotal": subtotal,
             })
 
-        service_fee = round(task.service_fee or 0.0, 2)
+        raw_service_fee = round(task.service_fee or 0.0, 2)
+        service_fee = raw_service_fee if is_completed else 0.0
+
         total_medicine_fee += medicine_fee
         total_service_fee += service_fee
+
+        if medicine_fee + service_fee == 0.0:
+            continue
 
         task_details.append({
             "task_id": task.task_id,
             "type": task.type,
             "time": task.time,
-            "status": task.status,
             "detail": task.detail,
             "medicine_fee": round(medicine_fee, 2),
             "service_fee": service_fee,

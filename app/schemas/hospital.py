@@ -49,7 +49,7 @@ class NurseTaskPlan(SQLModel):
     type: str
     start_time: datetime
     duration_days: int = Field(default=1, ge=1, le=30)
-    times_per_day: Optional[int] = Field(default=1, ge=1, le=3)
+    times_per_day: Optional[int] = Field(default=None, ge=1, le=6)
     interval_days: Optional[int] = Field(default=None, ge=1, le=30)
     detail: Optional[str] = None
     medicines: List[NurseTaskMedicineItem] = Field(default_factory=list)
