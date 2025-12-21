@@ -61,6 +61,7 @@
           <el-checkbox label="ALL">全部</el-checkbox>
           <el-checkbox label="排队中">排队中</el-checkbox>
           <el-checkbox label="就诊中">就诊中</el-checkbox>
+          <el-checkbox label="已过期">已过期</el-checkbox>
           <el-checkbox label="已完成">已完成</el-checkbox>
           <el-checkbox label="已取消">已取消</el-checkbox>
         </el-checkbox-group>
@@ -79,7 +80,7 @@
             </template>
           </el-table-column>
           <el-table-column prop="status" label="当前状态" width="120">
-            <template #default="scope">{{ normalizeStatus(scope.row.status) }}</template>
+            <template #default="scope">{{ deriveRegistrationStatus(scope.row) }}</template>
           </el-table-column>
           <el-table-column label="医生" width="160">
             <template #default="scope">{{ doctorNames[String(scope.row.doctor_id)] ?? scope.row.doctor_id }}</template>
@@ -330,11 +331,39 @@ function normalizeStatus(s: string | null | undefined) {
   return s;
 }
 
+function parseLocalYmd(value: string) {
+  const raw = (String(value).split("T")[0] ?? "").trim();
+  if (!raw) return null;
+  const [y, m, d] = raw.split("-").map((v) => Number(v));
+  if (!y || !m || !d) return null;
+  const dt = new Date(y, m - 1, d);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+function isRegistrationExpired(reg: RegistrationItem) {
+  if (!reg.visit_date) return false;
+  const visit = parseLocalYmd(reg.visit_date);
+  if (!visit) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (visit >= today) return false;
+
+  const s = normalizeStatus(reg.status);
+  return s !== "已完成" && s !== "已取消";
+}
+
+function deriveRegistrationStatus(reg: RegistrationItem) {
+  return isRegistrationExpired(reg) ? "已过期" : normalizeStatus(reg.status);
+}
+
 const filteredRegistrations = computed(() => {
   const filters = statusFilters.value;
   if (!filters.length || filters.includes("ALL")) return registrations.value;
   const set = new Set(filters);
-  return registrations.value.filter((r) => set.has(normalizeStatus(r.status)));
+  return registrations.value.filter((r) => set.has(deriveRegistrationStatus(r)));
 });
 
 watch(
@@ -365,7 +394,7 @@ watch(
 );
 
 function isCancellable(reg: RegistrationItem) {
-  return normalizeStatus(reg.status) === "排队中";
+  return deriveRegistrationStatus(reg) === "排队中";
 }
 
 function formatDateTimeText(value?: unknown) {

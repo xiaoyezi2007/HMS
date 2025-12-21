@@ -222,6 +222,8 @@ function onOpenNotice() {
 
 .menu :deep(.el-menu-item) {
   color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
 }
 
 .menu :deep(.el-menu-item.is-active) {
@@ -229,7 +231,18 @@ function onOpenNotice() {
 }
 
 .menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
   margin-right: 8px;
+  width: 18px;
+  height: 18px;
+}
+
+.menu-icon :deep(svg) {
+  width: 18px;
+  height: 18px;
 }
 
 .shell-header {
