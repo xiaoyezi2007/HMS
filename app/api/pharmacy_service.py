@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from typing import Dict, List
-from datetime import datetime, timedelta
+from typing import Dict, List, Tuple
+from datetime import date, datetime, timedelta
 import math
 
 from app.core.config import get_session
@@ -24,11 +24,19 @@ USAGE_WINDOW_DAYS = 30
 PLANNING_HORIZON_DAYS = 7
 
 
-def _build_inventory_view(med: Medicine, usage_map: Dict[int, int]) -> MedicineInventory:
+def _build_inventory_view(
+    med: Medicine,
+    usage_map: Dict[int, int],
+    trend_map: Dict[int, List[Dict[str, int]]],
+    date_labels: List[str],
+) -> MedicineInventory:
     usage_30d = int(usage_map.get(med.medicine_id, 0) or 0)
     avg_daily = usage_30d / USAGE_WINDOW_DAYS if usage_30d else 0.0
     expected_week_usage = math.ceil(avg_daily * PLANNING_HORIZON_DAYS)
     suggested_restock = max(expected_week_usage - med.stock, 0)
+    usage_trend = trend_map.get(med.medicine_id)
+    if not usage_trend:
+        usage_trend = [{"date": label, "quantity": 0} for label in date_labels]
     return MedicineInventory(
         medicine_id=med.medicine_id,
         name=med.name,
@@ -40,22 +48,42 @@ def _build_inventory_view(med: Medicine, usage_map: Dict[int, int]) -> MedicineI
         expected_week_usage=expected_week_usage,
         suggested_restock=suggested_restock,
         needs_restock=suggested_restock > 0,
+        usage_trend=usage_trend,
     )
 
 
-async def _load_usage_map(session: AsyncSession) -> Dict[int, int]:
-    cutoff = datetime.now() - timedelta(days=USAGE_WINDOW_DAYS)
+def _build_date_labels() -> List[str]:
+    today = date.today()
+    start_date = today - timedelta(days=USAGE_WINDOW_DAYS - 1)
+    return [(start_date + timedelta(days=i)).isoformat() for i in range(USAGE_WINDOW_DAYS)]
+
+
+async def _load_usage_stats(session: AsyncSession) -> Tuple[Dict[int, int], Dict[int, List[Dict[str, int]]], List[str]]:
+    cutoff = datetime.now() - timedelta(days=USAGE_WINDOW_DAYS - 1)
     stmt = (
         select(
             PrescriptionDetail.medicine_id,
-            func.coalesce(func.sum(PrescriptionDetail.quantity), 0),
+            func.date(Prescription.create_time).label("usage_date"),
+            func.coalesce(func.sum(PrescriptionDetail.quantity), 0).label("qty"),
         )
         .join(Prescription, PrescriptionDetail.pres_id == Prescription.pres_id)
         .where(Prescription.create_time >= cutoff)
-        .group_by(PrescriptionDetail.medicine_id)
+        .group_by(PrescriptionDetail.medicine_id, "usage_date")
     )
     rows = await session.execute(stmt)
-    return {medicine_id: int(total or 0) for medicine_id, total in rows.all()}
+    usage_totals: Dict[int, int] = {}
+    usage_daily: Dict[int, Dict[str, int]] = {}
+    for med_id, usage_date, qty in rows.all():
+        qty_int = int(qty or 0)
+        usage_totals[med_id] = usage_totals.get(med_id, 0) + qty_int
+        usage_daily.setdefault(med_id, {})[usage_date.isoformat() if hasattr(usage_date, "isoformat") else str(usage_date)] = qty_int
+
+    date_labels = _build_date_labels()
+    trend_map: Dict[int, List[Dict[str, int]]] = {}
+    for med_id, day_map in usage_daily.items():
+        trend_map[med_id] = [{"date": label, "quantity": day_map.get(label, 0)} for label in date_labels]
+
+    return usage_totals, trend_map, date_labels
 
 
 # 简单的医生验证
@@ -80,8 +108,8 @@ async def get_current_pharmacist(
 @router.get("/medicines", response_model=List[MedicineInventory])
 async def get_medicines(session: AsyncSession = Depends(get_session)):
     meds = (await session.execute(select(Medicine))).scalars().all()
-    usage_map = await _load_usage_map(session)
-    return [_build_inventory_view(med, usage_map) for med in meds]
+    usage_map, trend_map, date_labels = await _load_usage_stats(session)
+    return [_build_inventory_view(med, usage_map, trend_map, date_labels) for med in meds]
 
 
 @router.post("/medicines/replenish", response_model=List[MedicineInventory])
@@ -90,10 +118,10 @@ async def replenish_medicines(
     session: AsyncSession = Depends(get_session),
 ):
     meds = (await session.execute(select(Medicine))).scalars().all()
-    usage_map = await _load_usage_map(session)
+    usage_map, trend_map, date_labels = await _load_usage_stats(session)
     restocked = False
     for med in meds:
-        view = _build_inventory_view(med, usage_map)
+        view = _build_inventory_view(med, usage_map, trend_map, date_labels)
         if view.suggested_restock > 0:
             med.stock += view.suggested_restock
             session.add(med)
@@ -103,7 +131,7 @@ async def replenish_medicines(
         meds = (await session.execute(select(Medicine))).scalars().all()
     else:
         await session.rollback()
-    return [_build_inventory_view(med, usage_map) for med in meds]
+    return [_build_inventory_view(med, usage_map, trend_map, date_labels) for med in meds]
 
 
 @router.post("/medicines/purchase", response_model=Medicine)

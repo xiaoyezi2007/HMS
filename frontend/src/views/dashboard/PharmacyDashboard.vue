@@ -188,9 +188,10 @@
         </el-table-column>
         <el-table-column label="日均/预计" width="180">
           <template #default="{ row }">
-            <div class="usage-cell">
+            <div class="usage-cell usage-cell--clickable" @click="openTrendDialog(row)">
               <span>日均 {{ row.avg_daily_usage ? row.avg_daily_usage.toFixed(2) : '0.00' }}</span>
               <span>七天 {{ row.expected_week_usage }}</span>
+              <span class="usage-cell__link">查看30天曲线</span>
             </div>
           </template>
         </el-table-column>
@@ -202,13 +203,50 @@
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-dialog
+      v-model="trendDialogVisible"
+      :title="trendMedicine ? `${trendMedicine.name} · 30天用量` : '30天用量'"
+      width="720px"
+    >
+      <div v-if="trendData.length" class="trend-chart">
+        <div class="trend-chart__grid">
+          <div class="trend-chart__bars">
+            <div
+              v-for="point in trendData"
+              :key="point.date"
+              class="trend-bar"
+              :style="{ height: getBarHeight(point.quantity) }"
+            >
+              <span class="trend-bar__value">{{ point.quantity }}</span>
+            </div>
+          </div>
+          <div
+            v-if="trendStats.avg"
+            class="trend-chart__avg-line"
+            :style="{ bottom: getAverageLinePosition() }"
+          >
+            平均 {{ trendStats.avg.toFixed(1) }}
+          </div>
+        </div>
+        <div class="trend-chart__axis">
+          <span>{{ trendData[0].date }}</span>
+          <span>最大 {{ trendStats.max }}</span>
+          <span>{{ trendData[trendData.length - 1].date }}</span>
+        </div>
+      </div>
+      <div v-else class="trend-chart__empty">暂无近30天用量数据</div>
+      <template #footer>
+        <el-button @click="trendDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { fetchMedicines, purchaseMedicine, createMedicine, replenishMedicines, type MedicineItem } from "../../api/modules/pharmacy";
+import { fetchMedicines, purchaseMedicine, createMedicine, replenishMedicines, type MedicineItem, type UsagePoint } from "../../api/modules/pharmacy";
 
 const medicines = ref<MedicineItem[]>([]);
 const purchaseForm = reactive({
@@ -227,11 +265,23 @@ const lowStockThreshold = 50;
 const usageWindowDays = 30;
 const planningHorizonDays = 7;
 const restockLoading = ref(false);
+const trendDialogVisible = ref(false);
+const trendMedicine = ref<MedicineItem | null>(null);
+const trendData = ref<UsagePoint[]>([]);
 
 const lowStockList = computed(() =>
   medicines.value.filter((med) => med.needs_restock || med.stock < lowStockThreshold)
 );
 const needsRestockCount = computed(() => medicines.value.filter((med) => med.suggested_restock > 0).length);
+const trendStats = computed(() => {
+  if (!trendData.value.length) {
+    return { max: 0, avg: 0 };
+  }
+  const quantities = trendData.value.map((p) => p.quantity);
+  const max = Math.max(...quantities, 0);
+  const avg = quantities.reduce((sum, val) => sum + val, 0) / trendData.value.length;
+  return { max, avg };
+});
 
 async function loadMedicines() {
   try {
@@ -323,6 +373,25 @@ async function handleReplenish() {
   }
 }
 
+function openTrendDialog(medicine: MedicineItem) {
+  trendMedicine.value = medicine;
+  trendData.value = medicine.usage_trend ?? [];
+  trendDialogVisible.value = true;
+}
+
+function getBarHeight(quantity: number) {
+  const max = trendStats.value.max || 1;
+  const ratio = quantity / max;
+  return `${Math.max(ratio * 100, 4)}%`;
+}
+
+function getAverageLinePosition() {
+  const max = trendStats.value.max || 1;
+  if (!trendStats.value.avg) return "0%";
+  const ratio = trendStats.value.avg / max;
+  return `${Math.min(Math.max(ratio * 100, 0), 100)}%`;
+}
+
 onMounted(loadMedicines);
 </script>
 
@@ -379,5 +448,75 @@ onMounted(loadMedicines);
 
 .usage-cell span + span {
   margin-top: 2px;
+}
+
+.usage-cell--clickable {
+  cursor: pointer;
+  color: #303133;
+}
+
+.usage-cell__link {
+  color: #409eff;
+  font-size: 12px;
+}
+
+.trend-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trend-chart__grid {
+  position: relative;
+  border: 1px solid #ebeef5;
+  padding: 16px 12px 8px;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.trend-chart__bars {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(6px, 1fr));
+  gap: 4px;
+  align-items: end;
+  height: 220px;
+}
+
+.trend-bar {
+  position: relative;
+  background: linear-gradient(180deg, #66b1ff, #409eff);
+  border-radius: 2px 2px 0 0;
+}
+
+.trend-bar__value {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: #909399;
+}
+
+.trend-chart__avg-line {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  border-top: 1px dashed #f56c6c;
+  color: #f56c6c;
+  font-size: 12px;
+  padding-top: 4px;
+}
+
+.trend-chart__axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #909399;
+}
+
+.trend-chart__empty {
+  padding: 24px;
+  text-align: center;
+  color: #909399;
 }
 </style>

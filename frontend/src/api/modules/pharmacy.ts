@@ -1,5 +1,10 @@
 import http from "../http";
 
+export interface UsagePoint {
+  date: string;
+  quantity: number;
+}
+
 export interface MedicineItem {
   medicine_id: number;
   name: string;
@@ -11,6 +16,7 @@ export interface MedicineItem {
   expected_week_usage: number;
   suggested_restock: number;
   needs_restock: boolean;
+  usage_trend: UsagePoint[];
 }
 
 export interface PrescriptionItemPayload {

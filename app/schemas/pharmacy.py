@@ -32,6 +32,11 @@ class MedicineCreate(SQLModel):
     unit: str
 
 
+class UsagePoint(SQLModel):
+    date: str
+    quantity: int
+
+
 class MedicineInventory(SQLModel):
     medicine_id: int
     name: str
@@ -43,3 +48,4 @@ class MedicineInventory(SQLModel):
     expected_week_usage: int
     suggested_restock: int
     needs_restock: bool
+    usage_trend: List[UsagePoint]
