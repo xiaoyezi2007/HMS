@@ -104,6 +104,36 @@ export function fetchPatientExaminations() {
   return http.get(`/api/examinations`);
 }
 
+export interface HospitalizationTaskMedicine {
+  medicine_id: number;
+  name?: string | null;
+  usage?: string | null;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+}
+
+export interface HospitalizationTaskFee {
+  task_id: number;
+  type: string;
+  time: string;
+  status: string;
+  detail?: string | null;
+  medicine_fee: number;
+  service_fee: number;
+  total_fee: number;
+  medicines: HospitalizationTaskMedicine[];
+}
+
+export interface HospitalizationBill {
+  base_hours: number;
+  base_fee: number;
+  medicine_fee: number;
+  service_fee: number;
+  total_fee: number;
+  tasks: HospitalizationTaskFee[];
+}
+
 export interface PaymentItem {
   payment_id: number;
   type: string;
@@ -140,6 +170,7 @@ export interface PaymentItem {
     duration_hours: number;
     duration_days: number;
   } | null;
+  hospitalization_bill?: HospitalizationBill | null;
 }
 
 export function fetchMyPayments() {

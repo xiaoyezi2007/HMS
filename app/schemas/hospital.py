@@ -1,6 +1,7 @@
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Field
 from datetime import date, datetime
-from pydantic import FieldValidationInfo, field_validator
+from typing import List, Optional
+from pydantic import FieldValidationInfo, field_validator, model_validator
 
 from app.models.hospital import Gender, RegType
 
@@ -37,9 +38,42 @@ class ExaminationRead(SQLModel):
     record_id: int
 
 
-class NurseTaskCreate(SQLModel):
+class NurseTaskMedicineItem(SQLModel):
+    medicine_id: int
+    name: Optional[str] = None
+    quantity: int = Field(gt=0)
+    usage: str
+
+
+class NurseTaskPlan(SQLModel):
     type: str
-    time: datetime
+    start_time: datetime
+    duration_days: int = Field(default=1, ge=1, le=30)
+    times_per_day: Optional[int] = Field(default=1, ge=1, le=3)
+    interval_days: Optional[int] = Field(default=None, ge=1, le=30)
+    detail: Optional[str] = None
+    medicines: List[NurseTaskMedicineItem] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_plan(cls, values: "NurseTaskPlan") -> "NurseTaskPlan":
+        medication_types = {"输液", "吃药"}
+        detail_types = {"针灸", "手术"}
+
+        if values.times_per_day and values.interval_days:
+            raise ValueError("不能同时设置每天次数与间隔天数")
+        if not values.times_per_day and not values.interval_days:
+            values.times_per_day = 1
+
+        if values.type in medication_types and not values.medicines:
+            raise ValueError("药品类任务需至少选择一种药品")
+        if values.type in detail_types and not (values.detail and values.detail.strip()):
+            raise ValueError("请填写该项目的详细说明")
+
+        return values
+
+
+class NurseTaskBatchCreate(SQLModel):
+    plans: List[NurseTaskPlan]
 
 
 class PaymentCreate(SQLModel):

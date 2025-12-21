@@ -74,29 +74,151 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="taskVisible" title="添加护理任务" width="500px" destroy-on-close>
-      <el-form :model="taskForm" label-width="120px">
-        <el-form-item label="项目名称">
-          <el-select v-model="taskForm.type" placeholder="选择护理任务" teleported>
-            <el-option v-for="item in taskOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="预计完成时间">
-          <el-date-picker
-            v-model="taskForm.time"
-            type="datetime"
-            placeholder="选择完成时间"
-            value-format="YYYY-MM-DDTHH:mm:ss"
-            format="YYYY-MM-DD HH:mm"
-            teleported
-            :disabled-date="disablePast"
-            style="width: 100%"
-          />
-        </el-form-item>
-      </el-form>
+    <el-dialog v-model="taskVisible" title="添加护理任务" width="840px" destroy-on-close class="task-plan-dialog">
+      <el-alert
+        class="plan-hint"
+        type="info"
+        show-icon
+        title="可一次性配置多条护理计划，系统会按频次自动拆分成具体任务"
+      />
+      <el-empty v-if="!taskPlans.length" description="暂未添加护理计划" class="plan-empty">
+        <template #extra>
+          <el-button type="primary" @click="addPlan()">新增护理计划</el-button>
+        </template>
+      </el-empty>
+      <div v-else class="plan-collapse-wrapper">
+        <el-collapse v-model="activePlanPanel" accordion class="plan-collapse">
+          <el-collapse-item v-for="(plan, index) in taskPlans" :key="plan.uid" :name="plan.uid">
+            <template #title>
+              <div class="plan-collapse-title">
+                <span>计划 {{ index + 1 }} · {{ planTypeMetaMap[plan.type]?.label || plan.type }}</span>
+                <el-tag size="small" type="info">{{ plan.type }}</el-tag>
+                <span class="plan-start">开始：{{ formatDate(plan.start_time) }}</span>
+                <el-button type="text" size="small" @click.stop="removePlan(plan.uid)">删除</el-button>
+              </div>
+            </template>
+            <el-form label-width="120px" class="plan-form">
+              <el-row :gutter="16">
+                <el-col :xs="24" :sm="12">
+                  <el-form-item label="项目类型">
+                    <el-select v-model="plan.type" placeholder="选择项目" teleported @change="onPlanTypeChange(plan)">
+                      <el-option v-for="item in planTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item label="开始执行时间">
+                    <el-date-picker
+                      v-model="plan.start_time"
+                      type="datetime"
+                      placeholder="选择开始时间"
+                      value-format="YYYY-MM-DDTHH:mm:ss"
+                      format="YYYY-MM-DD HH:mm"
+                      teleported
+                      :disabled-date="disablePast"
+                      style="width: 100%"
+                    />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-row :gutter="16">
+                <el-col :xs="24" :sm="12">
+                  <el-form-item label="持续天数">
+                    <el-input-number v-model="plan.duration_days" :min="1" :max="30" />
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item label="频次模式">
+                    <el-radio-group v-model="plan.frequencyMode" size="small" @change="onFrequencyModeChange(plan)">
+                      <el-radio-button label="daily">每天 N 次</el-radio-button>
+                      <el-radio-button label="interval">每 N 天一次</el-radio-button>
+                    </el-radio-group>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-form-item v-if="plan.frequencyMode === 'daily'" label="每天次数">
+                <el-input-number v-model="plan.times_per_day" :min="1" :max="6" />
+              </el-form-item>
+              <el-form-item v-else label="间隔天数">
+                <el-input-number v-model="plan.interval_days" :min="1" :max="30" />
+              </el-form-item>
+
+              <el-form-item v-if="requiresDetail(plan.type)" label="项目详情">
+                <el-input
+                  v-model="plan.detail"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="请填写针灸/手术的部位、要点与注意事项"
+                />
+              </el-form-item>
+
+              <div v-if="requiresMedicines(plan.type)" class="plan-medicine-panel">
+                <div class="plan-subtitle">
+                  <span>药品与用法</span>
+                  <el-button size="small" type="primary" link @click="addMedicineRow(plan)">
+                    添加药品
+                  </el-button>
+                </div>
+                <el-empty v-if="!plan.medicines.length" description="暂未添加药品" />
+                <el-table v-else :data="plan.medicines" size="small" border>
+                  <el-table-column label="药品" min-width="220">
+                    <template #default="{ row }">
+                      <el-select
+                        v-model="row.medicine_id"
+                        filterable
+                        placeholder="选择药品"
+                        :loading="medicineLoading"
+                        teleported
+                      >
+                        <el-option
+                          v-for="med in medicineOptions"
+                          :key="med.medicine_id"
+                          :label="`${med.name} · 库存 ${med.stock}`"
+                          :value="med.medicine_id"
+                        />
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="数量" width="140">
+                    <template #default="{ row }">
+                      <el-input-number v-model="row.quantity" :min="1" :max="20" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="用法" min-width="220">
+                    <template #default="{ row }">
+                      <el-input v-model="row.usage" placeholder="剂量 / 途径 / 频次" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="90" align="center">
+                    <template #default="{ row }">
+                      <el-button type="text" size="small" @click="removeMedicineRow(plan, row.uid)">移除</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </el-form>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
+      <div class="plan-add-toolbar">
+        <span>快速添加：</span>
+        <el-space wrap>
+          <el-button size="small" @click="addPlan()" plain>默认计划</el-button>
+          <el-button
+            v-for="item in planTypeOptions"
+            :key="item.value"
+            size="small"
+            type="primary"
+            plain
+            @click="addPlan(item.value)"
+          >
+            {{ item.label }}
+          </el-button>
+        </el-space>
+      </div>
       <template #footer>
         <el-button @click="taskVisible = false" :disabled="taskSubmitting">取消</el-button>
-        <el-button type="primary" :loading="taskSubmitting" @click="submitTask">保存</el-button>
+        <el-button type="primary" :loading="taskSubmitting" @click="submitTask">生成任务</el-button>
       </template>
     </el-dialog>
 
@@ -232,16 +354,18 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import {
-  createNurseTask,
+  createNurseTasks,
   fetchDoctorInpatients,
   fetchPatientRegistrationHistory,
   fetchDoctorRegistrationDetail,
   type DoctorInpatientItem,
-  type NurseTaskCreatePayload,
+  type NurseTaskBatchCreatePayload,
+  type NurseTaskPlanPayload,
   type DoctorPatientRegistrationHistoryItem,
   type DoctorRegistrationDetail,
   type HistoryRange
 } from "../../api/modules/doctor";
+import { fetchMedicines, type MedicineItem } from "../../api/modules/pharmacy";
 
 const inpatients = ref<DoctorInpatientItem[]>([]);
 const loading = ref(false);
@@ -249,14 +373,44 @@ const detailVisible = ref(false);
 const detailItem = ref<DoctorInpatientItem | null>(null);
 const taskVisible = ref(false);
 const taskSubmitting = ref(false);
-const taskForm = ref<NurseTaskCreatePayload>({ type: "输液", time: formatDateTimeLocal() });
-const taskOptions = [
-  { label: "输液", value: "输液" },
-  { label: "吃药", value: "吃药" },
-  { label: "针灸", value: "针灸" },
-  { label: "手术", value: "手术" },
+
+type PlanFrequencyMode = "daily" | "interval";
+
+interface PlanMedicineRow {
+  uid: string;
+  medicine_id?: number;
+  quantity: number;
+  usage: string;
+}
+
+interface PlanForm {
+  uid: string;
+  type: NurseTaskPlanPayload["type"];
+  start_time: string;
+  duration_days: number;
+  frequencyMode: PlanFrequencyMode;
+  times_per_day: number | null;
+  interval_days: number | null;
+  detail: string;
+  medicines: PlanMedicineRow[];
+}
+
+const planTypeOptions = [
+  { label: "输液", value: "输液", requiresMedicines: true },
+  { label: "吃药", value: "吃药", requiresMedicines: true },
+  { label: "针灸", value: "针灸", requiresDetail: true },
+  { label: "手术", value: "手术", requiresDetail: true }
 ];
+const planTypeMetaMap = planTypeOptions.reduce<Record<string, (typeof planTypeOptions)[number]>>((acc, cur) => {
+  acc[cur.value] = cur;
+  return acc;
+}, {});
+
+const taskPlans = ref<PlanForm[]>([]);
+const activePlanPanel = ref<string | undefined>(undefined);
 const activeHospId = ref<number | null>(null);
+const medicineOptions = ref<MedicineItem[]>([]);
+const medicineLoading = ref(false);
 
 type HistoryContext = { patient_id: number; patient_name: string; current_reg_id: number };
 
@@ -293,6 +447,14 @@ watch(historyDialogVisible, (visible) => {
     historyItems.value = [];
     historyError.value = "";
     historyContext.value = null;
+  }
+});
+
+watch(taskVisible, (visible) => {
+  if (!visible) {
+    taskPlans.value = [];
+    activePlanPanel.value = undefined;
+    activeHospId.value = null;
   }
 });
 
@@ -416,20 +578,201 @@ function formatDateTimeLocal(date = new Date()) {
 
 function openTaskDialog(row: DoctorInpatientItem) {
   activeHospId.value = row.hosp_id;
-  taskForm.value = { type: taskForm.value.type || "输液", time: formatDateTimeLocal() };
+  taskPlans.value = [createEmptyPlan()];
+  activePlanPanel.value = taskPlans.value[0]?.uid;
+  void ensureMedicinesLoaded();
   taskVisible.value = true;
 }
 
+function requiresMedicines(type: string) {
+  return Boolean(planTypeMetaMap[type]?.requiresMedicines);
+}
+
+function requiresDetail(type: string) {
+  return Boolean(planTypeMetaMap[type]?.requiresDetail);
+}
+
+function createMedicineRow(): PlanMedicineRow {
+  return {
+    uid: `med-${Math.random().toString(36).slice(2, 8)}${Date.now()}`,
+    quantity: 1,
+    usage: ""
+  };
+}
+
+function createEmptyPlan(type: PlanForm["type"] = "输液"): PlanForm {
+  const plan: PlanForm = {
+    uid: `plan-${Math.random().toString(36).slice(2, 8)}${Date.now()}`,
+    type,
+    start_time: formatDateTimeLocal(),
+    duration_days: 1,
+    frequencyMode: "daily",
+    times_per_day: 1,
+    interval_days: null,
+    detail: "",
+    medicines: []
+  };
+  if (requiresMedicines(type)) {
+    plan.medicines.push(createMedicineRow());
+  }
+  return plan;
+}
+
+async function ensureMedicinesLoaded() {
+  if (medicineOptions.value.length || medicineLoading.value) return;
+  medicineLoading.value = true;
+  try {
+    const { data } = await fetchMedicines();
+    medicineOptions.value = data;
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail ?? "加载药品列表失败");
+  } finally {
+    medicineLoading.value = false;
+  }
+}
+
+function addPlan(type?: PlanForm["type"]) {
+  const plan = createEmptyPlan(type ?? "输液");
+  taskPlans.value.push(plan);
+  activePlanPanel.value = plan.uid;
+}
+
+function removePlan(uid: string) {
+  const idx = taskPlans.value.findIndex((plan) => plan.uid === uid);
+  if (idx !== -1) {
+    taskPlans.value.splice(idx, 1);
+  }
+  activePlanPanel.value = taskPlans.value[0]?.uid;
+}
+
+function onPlanTypeChange(plan: PlanForm) {
+  if (!requiresMedicines(plan.type)) {
+    plan.medicines.splice(0, plan.medicines.length);
+  }
+  if (!requiresDetail(plan.type)) {
+    plan.detail = "";
+  }
+}
+
+function addMedicineRow(plan: PlanForm) {
+  plan.medicines.push(createMedicineRow());
+}
+
+function removeMedicineRow(plan: PlanForm, rowUid: string) {
+  const idx = plan.medicines.findIndex((row) => row.uid === rowUid);
+  if (idx !== -1) {
+    plan.medicines.splice(idx, 1);
+  }
+}
+
+function getMedicineName(id?: number) {
+  if (!id) return "";
+  const item = medicineOptions.value.find((m) => m.medicine_id === id);
+  return item?.name ?? "";
+}
+
+function onFrequencyModeChange(plan: PlanForm) {
+  if (plan.frequencyMode === "daily") {
+    plan.times_per_day = plan.times_per_day ?? 1;
+  } else {
+    plan.interval_days = plan.interval_days ?? 1;
+  }
+}
+
 function disablePast(date: Date) {
-  return date.getTime() < Date.now() - 60 * 1000; // allow from current minute onwards
+  return date.getTime() < Date.now() - 60 * 1000;
+}
+
+function validatePlans(): string | null {
+  if (!taskPlans.value.length) {
+    return "请至少添加一个护理计划";
+  }
+  const now = Date.now();
+  for (let i = 0; i < taskPlans.value.length; i += 1) {
+    const plan = taskPlans.value[i];
+    const label = `计划 ${i + 1}`;
+    if (!plan.start_time) {
+      return `${label} 缺少开始时间`;
+    }
+    if (new Date(plan.start_time).getTime() <= now) {
+      return `${label} 的开始时间需晚于当前时间`;
+    }
+    if (!plan.duration_days || plan.duration_days < 1) {
+      return `${label} 的持续天数需大于 0`;
+    }
+    if (plan.frequencyMode === "daily") {
+      if (!plan.times_per_day || plan.times_per_day < 1) {
+        return `${label} 的每天次数需大于 0`;
+      }
+      plan.interval_days = null;
+    } else {
+      if (!plan.interval_days || plan.interval_days < 1) {
+        return `${label} 的间隔天数需大于 0`;
+      }
+      plan.times_per_day = null;
+    }
+    if (requiresMedicines(plan.type)) {
+      if (!plan.medicines.length) {
+        return `${label} 请添加至少一种药品`;
+      }
+      for (const med of plan.medicines) {
+        if (!med.medicine_id) {
+          return `${label} 存在未选择的药品`;
+        }
+        if (med.quantity <= 0) {
+          return `${label} 的药品数量需大于 0`;
+        }
+        if (!med.usage.trim()) {
+          return `${label} 的药品用法不能为空`;
+        }
+      }
+    }
+    if (requiresDetail(plan.type) && !plan.detail.trim()) {
+      return `${label} 需填写详情说明`;
+    }
+  }
+  return null;
+}
+
+function buildTaskPayload(): NurseTaskBatchCreatePayload {
+  const plans: NurseTaskPlanPayload[] = taskPlans.value.map((plan) => {
+    const payload: NurseTaskPlanPayload = {
+      type: plan.type,
+      start_time: plan.start_time,
+      duration_days: plan.duration_days,
+      detail: plan.detail.trim() || undefined,
+      medicines: requiresMedicines(plan.type)
+        ? plan.medicines.map((med) => ({
+            medicine_id: med.medicine_id!,
+            name: getMedicineName(med.medicine_id),
+            quantity: med.quantity,
+            usage: med.usage.trim(),
+          }))
+        : []
+    };
+    if (plan.frequencyMode === "daily") {
+      payload.times_per_day = plan.times_per_day ?? 1;
+    } else {
+      payload.interval_days = plan.interval_days ?? 1;
+    }
+    return payload;
+  });
+  return { plans };
 }
 
 async function submitTask() {
   if (!activeHospId.value) return;
+  const validationError = validatePlans();
+  if (validationError) {
+    ElMessage.error(validationError);
+    return;
+  }
   taskSubmitting.value = true;
   try {
-    await createNurseTask(activeHospId.value, taskForm.value);
-    ElMessage.success("护理任务已创建");
+    const payload = buildTaskPayload();
+    const { data } = await createNurseTasks(activeHospId.value, payload);
+    const count = data?.created ?? payload.plans.length;
+    ElMessage.success(`已生成 ${count} 条护理任务`);
     taskVisible.value = false;
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.detail ?? "创建护理任务失败");
@@ -440,6 +783,7 @@ async function submitTask() {
 
 onMounted(() => {
   void loadInpatients();
+  void ensureMedicinesLoaded();
 });
 </script>
 
@@ -602,5 +946,58 @@ onMounted(() => {
 
 .detail-empty {
   padding: 24px 0;
+}
+
+.task-plan-dialog :deep(.el-dialog__body) {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.plan-hint {
+  margin-bottom: 12px;
+}
+
+.plan-empty {
+  margin: 24px 0;
+}
+
+.plan-collapse-wrapper {
+  max-height: 420px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.plan-collapse-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-collapse-title .plan-start {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.plan-form {
+  padding: 12px 0;
+}
+
+.plan-medicine-panel {
+  margin-top: 8px;
+}
+
+.plan-subtitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.plan-add-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>

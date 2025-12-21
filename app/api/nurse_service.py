@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete
-from sqlalchemy import and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -38,7 +37,10 @@ from app.schemas.nurse import (
     WardTaskItem,
 )
 
-HOSPITAL_HOURLY_RATE = 80.0
+from app.services.billing import (
+    DEFAULT_HOSPITAL_HOURLY_RATE,
+    compute_hospitalization_bill,
+)
 
 router = APIRouter()
 
@@ -65,20 +67,53 @@ async def get_head_nurse(
     return nurse
 
 
-async def assign_tasks_to_ward(session: AsyncSession, ward_id: int, nurse_id: int) -> None:
-    hosp_stmt = select(Hospitalization.hosp_id).where(
-        Hospitalization.ward_id == ward_id,
-        Hospitalization.status == "在院",
-    )
-    hosp_ids = (await session.execute(hosp_stmt)).scalars().all()
-    if not hosp_ids:
-        return
+ScheduleEntry = Tuple[NurseSchedule, Nurse]
+ScheduleMap = Dict[int, List[ScheduleEntry]]
 
-    task_stmt = select(NurseTask).where(NurseTask.hosp_id.in_(hosp_ids))
-    tasks = (await session.execute(task_stmt)).scalars().all()
-    for task in tasks:
-        task.nurse_id = nurse_id
-        session.add(task)
+
+async def load_schedule_map(session: AsyncSession, ward_ids: List[int]) -> ScheduleMap:
+    if not ward_ids:
+        return {}
+    stmt = (
+        select(NurseSchedule, Nurse)
+        .join(Nurse, NurseSchedule.nurse_id == Nurse.nurse_id)
+        .where(NurseSchedule.ward_id.in_(ward_ids))
+    )
+    rows = await session.execute(stmt)
+    schedule_map: ScheduleMap = {}
+    for schedule, nurse in rows.all():
+        bucket = schedule_map.setdefault(schedule.ward_id, [])
+        bucket.append((schedule, nurse))
+    for bucket in schedule_map.values():
+        bucket.sort(key=lambda entry: (entry[0].start_time, entry[0].end_time, entry[0].nurse_id))
+    return schedule_map
+
+
+def resolve_on_duty_nurse(schedule_map: ScheduleMap, ward_id: Optional[int], target_time: datetime) -> Optional[Nurse]:
+    if ward_id is None:
+        return None
+    for schedule, nurse in schedule_map.get(ward_id, []):
+        if schedule.start_time <= target_time <= schedule.end_time:
+            return nurse
+    return None
+
+
+async def nurse_has_assignment(
+        session: AsyncSession,
+        nurse: Nurse,
+        ward_id: Optional[int],
+        target_time: datetime
+) -> bool:
+    if ward_id is None:
+        return False
+    stmt = select(NurseSchedule).where(
+        NurseSchedule.nurse_id == nurse.nurse_id,
+        NurseSchedule.ward_id == ward_id,
+        NurseSchedule.start_time <= target_time,
+        NurseSchedule.end_time >= target_time,
+    )
+    assigned = (await session.execute(stmt)).scalars().first()
+    return assigned is not None
 
 
 async def _expire_overdue_tasks(session: AsyncSession, task_ids: list[int]) -> None:
@@ -114,35 +149,40 @@ async def list_today_tasks(
     end = start + timedelta(days=1)
 
     stmt = (
-        select(NurseTask, Patient, Nurse)
+        select(NurseTask, Patient, Hospitalization.ward_id)
         .join(Hospitalization, NurseTask.hosp_id == Hospitalization.hosp_id)
         .join(MedicalRecord, Hospitalization.record_id == MedicalRecord.record_id)
         .join(Registration, MedicalRecord.reg_id == Registration.reg_id)
         .join(Patient, Registration.patient_id == Patient.patient_id)
-        .join(Nurse, NurseTask.nurse_id == Nurse.nurse_id)
         .where(NurseTask.time >= start, NurseTask.time < end)
     )
-
-    if not nurse.is_head_nurse:
-        stmt = stmt.where(NurseTask.nurse_id == nurse.nurse_id)
 
     rows = (await session.execute(stmt)).all()
     task_ids = [t.task_id for t, _, _ in rows]
     await _expire_overdue_tasks(session, task_ids)
 
+    ward_ids = [ward_id for _, _, ward_id in rows if ward_id is not None]
+    schedule_map = await load_schedule_map(session, list(set(ward_ids)))
+
     payload: List[TodayTaskItem] = []
     now = datetime.now()
-    for task, patient, nurse_row in rows:
+    for task, patient, ward_id in rows:
+        assigned_nurse = resolve_on_duty_nurse(schedule_map, ward_id, task.time)
+        if not nurse.is_head_nurse:
+            if not assigned_nurse or assigned_nurse.nurse_id != nurse.nurse_id:
+                continue
+
         status = task.status
         if status == "未完成" and task.time < now:
             status = "已过期"
+        nurse_name = assigned_nurse.name if assigned_nurse else "未排班"
         payload.append(TodayTaskItem(
             task_id=task.task_id,
             patient_name=patient.name,
             type=task.type,
             time=task.time,
             status=status,
-            nurse_name=nurse_row.name,
+            nurse_name=nurse_name,
         ))
 
     payload.sort(key=lambda item: item.time)
@@ -294,12 +334,11 @@ async def list_ward_tasks(
         return []
 
     stmt = (
-        select(NurseTask, Patient, Nurse)
+        select(NurseTask, Patient, Hospitalization.ward_id)
         .join(Hospitalization, NurseTask.hosp_id == Hospitalization.hosp_id)
         .join(MedicalRecord, Hospitalization.record_id == MedicalRecord.record_id)
         .join(Registration, MedicalRecord.reg_id == Registration.reg_id)
         .join(Patient, Registration.patient_id == Patient.patient_id)
-        .join(Nurse, NurseTask.nurse_id == Nurse.nurse_id)
         .where(NurseTask.hosp_id.in_(hosp_ids))
         .order_by(NurseTask.time.asc(), NurseTask.task_id.asc())
     )
@@ -308,12 +347,14 @@ async def list_ward_tasks(
     task_ids = [t.task_id for t, _, _ in rows]
     await _expire_overdue_tasks(session, task_ids)
 
+    schedule_map = await load_schedule_map(session, [ward_id])
     now = datetime.now()
     payload: List[WardTaskItem] = []
-    for task, patient, nurse_row in rows:
+    for task, patient, ward_ref in rows:
         status = task.status
         if status == "未完成" and task.time < now:
             status = "已过期"
+        assigned_nurse = resolve_on_duty_nurse(schedule_map, ward_ref, task.time)
         payload.append(WardTaskItem(
             task_id=task.task_id,
             hosp_id=task.hosp_id,
@@ -321,7 +362,7 @@ async def list_ward_tasks(
             type=task.type,
             time=task.time,
             status=status,
-            nurse_name=nurse_row.name,
+            nurse_name=assigned_nurse.name if assigned_nurse else "未排班",
         ))
     return payload
 
@@ -360,7 +401,6 @@ async def upsert_schedule_slot(
         await session.commit()
         return {"detail": "排班已更新"}
 
-    target_nurse_id = payload.nurse_ids[0]
     for nurse_id in payload.nurse_ids:
         session.add(NurseSchedule(
             nurse_id=nurse_id,
@@ -368,8 +408,6 @@ async def upsert_schedule_slot(
             start_time=payload.start_time,
             end_time=payload.end_time
         ))
-
-    await assign_tasks_to_ward(session, payload.ward_id, target_nurse_id)
 
     await session.commit()
     return {"detail": "排班已更新"}
@@ -427,7 +465,6 @@ async def auto_generate_schedules(
     await session.execute(del_stmt)
 
     cursor = 0
-    first_assignment = {}
     for shift_index in range(shift_count):
         slot_time = start_time + timedelta(hours=shift_hours * shift_index)
         slot_end = slot_time + timedelta(hours=shift_hours)
@@ -440,12 +477,6 @@ async def auto_generate_schedules(
                 end_time=slot_end
             ))
             cursor += 1
-
-            if ward.ward_id not in first_assignment and (slot_time <= now < slot_end or slot_time >= now):
-                first_assignment[ward.ward_id] = nurse.nurse_id
-
-    for ward_id, nurse_id in first_assignment.items():
-        await assign_tasks_to_ward(session, ward_id, nurse_id)
 
     await session.commit()
     total_records = len(wards) * shift_count
@@ -462,8 +493,12 @@ async def complete_task(
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    if not nurse.is_head_nurse and task.nurse_id != nurse.nurse_id:
-        raise HTTPException(status_code=403, detail="仅负责该任务的护士可以完成")
+    hospitalization = await session.get(Hospitalization, task.hosp_id)
+    ward_id = hospitalization.ward_id if hospitalization else None
+    if not nurse.is_head_nurse:
+        assigned = await nurse_has_assignment(session, nurse, ward_id, task.time)
+        if not assigned:
+            raise HTTPException(status_code=403, detail="仅当前排班护士可以完成该任务")
 
     if task.status == "已完成":
         return {"detail": "任务已完成"}
@@ -534,8 +569,13 @@ async def discharge_inpatient(
         raise HTTPException(status_code=400, detail="缺少患者信息")
 
     out_date = datetime.now()
-    stay_hours = max((out_date - hospitalization.in_date).total_seconds() / 3600, 0.5)
-    amount = round(stay_hours * HOSPITAL_HOURLY_RATE, 2)
+    bill = await compute_hospitalization_bill(
+        session,
+        hospitalization,
+        DEFAULT_HOSPITAL_HOURLY_RATE,
+        reference_end=out_date,
+    )
+    amount = bill["total_fee"]
 
     hospitalization.status = "已出院"
     hospitalization.out_date = out_date
@@ -546,6 +586,7 @@ async def discharge_inpatient(
         amount=amount,
         status="未缴费",
         patient_id=patient.patient_id,
+        reg_id=registration.reg_id,
         hosp_id=hospitalization.hosp_id
     )
     session.add(payment)
@@ -556,6 +597,6 @@ async def discharge_inpatient(
     return {
         "detail": "出院办理完成",
         "bill_amount": amount,
-        "stay_hours": stay_hours,
+        "bill_breakdown": bill,
         "payment_id": payment.payment_id
     }

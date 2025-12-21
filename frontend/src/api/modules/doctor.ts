@@ -37,17 +37,33 @@ export interface DoctorInpatientItem {
   reg_id: number;
 }
 
-export interface NurseTaskCreatePayload {
+export interface NurseTaskMedicineItemPayload {
+  medicine_id: number;
+  name?: string;
+  quantity: number;
+  usage: string;
+}
+
+export interface NurseTaskPlanPayload {
   type: string;
-  time: string;
+  start_time: string;
+  duration_days: number;
+  times_per_day?: number;
+  interval_days?: number;
+  detail?: string;
+  medicines: NurseTaskMedicineItemPayload[];
+}
+
+export interface NurseTaskBatchCreatePayload {
+  plans: NurseTaskPlanPayload[];
 }
 
 export interface NurseTaskItem {
   task_id: number;
   type: string;
   time: string;
-  nurse_id: number;
   hosp_id: number;
+  status: string;
 }
 
 export type HistoryRange = "current" | "7d" | "30d";
@@ -146,7 +162,7 @@ export function fetchDoctorInpatients() {
   return http.get<DoctorInpatientItem[]>("/api/doctor/inpatients");
 }
 
-export function createNurseTask(hospId: number, payload: NurseTaskCreatePayload) {
+export function createNurseTasks(hospId: number, payload: NurseTaskBatchCreatePayload) {
   return http.post(`/api/doctor/hospitalizations/${hospId}/tasks`, payload);
 }
 

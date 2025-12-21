@@ -28,6 +28,10 @@ from app.models.hospital import (
 )
 from app.models.user import UserAccount, UserRole
 from app.schemas.hospital import PatientCreate, RegistrationCreate
+from app.services.billing import (
+    DEFAULT_HOSPITAL_HOURLY_RATE,
+    compute_hospitalization_bill,
+)
 
 router = APIRouter()
 
@@ -573,6 +577,11 @@ async def get_my_payments(
                     "duration_hours": duration_hours,
                     "duration_days": round(duration_hours / 24, 2)
                 }
+                entry["hospitalization_bill"] = await compute_hospitalization_bill(
+                    session,
+                    hosp,
+                    DEFAULT_HOSPITAL_HOURLY_RATE,
+                )
 
         out.append(entry)
     return out

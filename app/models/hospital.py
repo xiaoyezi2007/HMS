@@ -100,7 +100,6 @@ class Nurse(SQLModel, table=True):
     phone: str = Field(max_length=11, unique=True)
     is_head_nurse: bool = Field(default=False, description="是否为护士长")
     schedules: List["NurseSchedule"] = Relationship(back_populates="nurse")
-    tasks: List["NurseTask"] = Relationship(back_populates="nurse")
 
 
 # --- 10. 病房表 ---
@@ -130,10 +129,11 @@ class NurseTask(SQLModel, table=True):
     type: str = Field(max_length=100, description="检查/任务类型")
     time: datetime = Field(description="需要完成的时间")
     status: str = Field(default="未完成", max_length=20, description="任务状态：未完成/已完成/已过期")
-    nurse_id: int = Field(foreign_key="nurse.nurse_id")
     hosp_id: int = Field(foreign_key="hospitalization.hosp_id")
+    detail: Optional[str] = Field(default=None, description="任务详情/备注")
+    medicine_snapshot: Optional[str] = Field(default=None, description="药品 + 用法 JSON 快照")
+    service_fee: Optional[float] = Field(default=None, description="针灸/手术等额外服务费用")
 
-    nurse: Optional[Nurse] = Relationship(back_populates="tasks")
     hospitalization: Optional["Hospitalization"] = Relationship()
 
 # --- 12. 药品表 ---

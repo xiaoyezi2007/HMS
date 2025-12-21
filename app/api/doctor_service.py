@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, SQLModel
 from typing import List, Optional
 import io
+import json
 
 from app.core.config import get_session
 # --- 修改点：从 deps 导入，不再依赖 patient_service ---
@@ -28,12 +29,10 @@ from app.models.hospital import (
     Hospitalization,
     ExamResult,
     Medicine,
-    Nurse,
-    NurseSchedule,
     NurseTask,
 )
 from app.schemas.hospital import MedicalRecordCreate
-from app.schemas.hospital import ExaminationCreate, NurseTaskCreate
+from app.schemas.hospital import ExaminationCreate, NurseTaskBatchCreate, NurseTaskPlan
 import random
 
 router = APIRouter()
@@ -67,37 +66,52 @@ def format_datetime(dt):
     return dt.strftime("%Y-%m-%d %H:%M")
 
 
-async def pick_nurse_for_ward(session: AsyncSession, ward_id: int) -> Nurse:
-    now = datetime.now()
-    scheduled_stmt = (
-        select(Nurse)
-        .join(NurseSchedule, NurseSchedule.nurse_id == Nurse.nurse_id)
-        .where(NurseSchedule.ward_id == ward_id)
-        .where(NurseSchedule.start_time <= now, NurseSchedule.end_time >= now)
-        .order_by(Nurse.is_head_nurse.desc(), NurseSchedule.start_time.desc())
-    )
-    scheduled_nurse = (await session.execute(scheduled_stmt)).scalars().first()
-    if scheduled_nurse:
-        return scheduled_nurse
+def build_task_detail(plan: NurseTaskPlan) -> Optional[str]:
+    detail_parts: List[str] = []
+    if plan.detail and plan.detail.strip():
+        detail_parts.append(plan.detail.strip())
 
-    recent_stmt = (
-        select(Nurse)
-        .join(NurseSchedule, NurseSchedule.nurse_id == Nurse.nurse_id)
-        .where(NurseSchedule.ward_id == ward_id)
-        .order_by(NurseSchedule.end_time.desc())
-    )
-    recent_nurse = (await session.execute(recent_stmt)).scalars().first()
-    if recent_nurse:
-        return recent_nurse
+    if plan.interval_days:
+        detail_parts.append(f"频次：每 {plan.interval_days} 天 1 次，持续 {plan.duration_days} 天")
+    else:
+        times = plan.times_per_day or 1
+        detail_parts.append(f"频次：每天 {times} 次，持续 {plan.duration_days} 天")
 
-    head_nurse = (await session.execute(select(Nurse).where(Nurse.is_head_nurse == True).order_by(Nurse.nurse_id))).scalars().first()
-    if head_nurse:
-        return head_nurse
+    return "；".join(detail_parts) if detail_parts else None
 
-    any_nurse = (await session.execute(select(Nurse).order_by(Nurse.nurse_id))).scalars().first()
-    if not any_nurse:
-        raise HTTPException(status_code=400, detail="暂无可分配的护士")
-    return any_nurse
+
+def expand_task_schedule(plan: NurseTaskPlan) -> List[datetime]:
+    occurrences: List[datetime] = []
+    if plan.interval_days:
+        interval = plan.interval_days
+        current_time = plan.start_time
+        days_elapsed = 0
+        while days_elapsed < plan.duration_days:
+            occurrences.append(current_time)
+            days_elapsed += interval
+            current_time += timedelta(days=interval)
+    else:
+        times_per_day = plan.times_per_day or 1
+        spacing_hours = 24 / times_per_day
+        for day_offset in range(plan.duration_days):
+            day_start = plan.start_time + timedelta(days=day_offset)
+            for idx in range(times_per_day):
+                occurrences.append(day_start + timedelta(hours=spacing_hours * idx))
+
+    return occurrences
+
+
+SERVICE_FEE_RANGE = {
+    "针灸": (80, 200),
+    "手术": (800, 1500),
+}
+
+
+def estimate_service_fee(task_type: str) -> Optional[float]:
+    fee_range = SERVICE_FEE_RANGE.get(task_type)
+    if not fee_range:
+        return None
+    return round(random.uniform(*fee_range), 2)
 
 
 # --- 接口 1: 医生排班 ---
@@ -460,14 +474,14 @@ async def get_registration_detail_for_doctor(
 
 
 @router.post("/hospitalizations/{hosp_id}/tasks")
-async def create_nurse_task(
+async def create_nurse_tasks(
     hosp_id: int,
-    payload: NurseTaskCreate,
+    payload: NurseTaskBatchCreate,
     doctor: Doctor = Depends(get_current_doctor),
     session: AsyncSession = Depends(get_session)
 ):
-    if payload.time <= datetime.now():
-        raise HTTPException(status_code=400, detail="预计完成时间需晚于当前时间")
+    if not payload.plans:
+        raise HTTPException(status_code=400, detail="请至少添加一个护理任务计划")
 
     hospitalization = await session.get(Hospitalization, hosp_id)
     if not hospitalization:
@@ -479,17 +493,41 @@ async def create_nurse_task(
     if not hospitalization.ward_id:
         raise HTTPException(status_code=400, detail="该住院记录缺少病房信息")
 
-    nurse = await pick_nurse_for_ward(session, hospitalization.ward_id)
-    task = NurseTask(
-        type=payload.type,
-        time=payload.time,
-        nurse_id=nurse.nurse_id,
-        hosp_id=hosp_id
-    )
-    session.add(task)
+    now = datetime.now()
+    created_tasks: List[NurseTask] = []
+    for plan in payload.plans:
+        if plan.start_time <= now:
+            raise HTTPException(status_code=400, detail=f"{plan.type} 的开始时间需晚于当前时间")
+
+        schedule_times = expand_task_schedule(plan)
+        if not schedule_times:
+            raise HTTPException(status_code=400, detail=f"{plan.type} 未生成任何护理任务，请检查频次设置")
+
+        snapshot = json.dumps([item.dict() for item in plan.medicines], ensure_ascii=False) if plan.medicines else None
+        detail_text = build_task_detail(plan)
+
+        for scheduled_time in schedule_times:
+            if scheduled_time <= now:
+                raise HTTPException(status_code=400, detail=f"{plan.type} 的执行时间需晚于当前时间")
+            service_fee = estimate_service_fee(plan.type)
+            task = NurseTask(
+                type=plan.type,
+                time=scheduled_time,
+                hosp_id=hosp_id,
+                detail=detail_text,
+                medicine_snapshot=snapshot,
+                service_fee=service_fee,
+            )
+            session.add(task)
+            created_tasks.append(task)
+
+    if not created_tasks:
+        raise HTTPException(status_code=400, detail="未生成任何护理任务，请检查任务计划配置")
+
     await session.commit()
-    await session.refresh(task)
-    return task
+    for task in created_tasks:
+        await session.refresh(task)
+    return {"created": len(created_tasks), "tasks": created_tasks}
 
 # --- 新：根据挂号ID查询对应病历（仅限接诊该挂号的医生） ---
 @router.get("/consultations/{reg_id}/record", response_model=MedicalRecord)
