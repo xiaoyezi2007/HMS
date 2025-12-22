@@ -64,6 +64,11 @@ class NurseTaskPlan(SQLModel):
         if not values.times_per_day and not values.interval_days:
             values.times_per_day = 1
 
+        if not values.interval_days:
+            # 仅支持每天一次、两次、三次
+            if values.times_per_day not in {1, 2, 3}:
+                raise ValueError("每天次数仅支持 1 次、2 次或 3 次")
+
         if values.type in medication_types and not values.medicines:
             raise ValueError("药品类任务需至少选择一种药品")
         if values.type in detail_types and not (values.detail and values.detail.strip()):

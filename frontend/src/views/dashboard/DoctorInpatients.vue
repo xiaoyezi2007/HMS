@@ -137,7 +137,11 @@
                 </el-col>
               </el-row>
               <el-form-item v-if="plan.frequencyMode === 'daily'" label="每天次数">
-                <el-input-number v-model="plan.times_per_day" :min="1" :max="6" />
+                <el-radio-group v-model="plan.times_per_day" size="small">
+                  <el-radio-button :label="1">每天一次</el-radio-button>
+                  <el-radio-button :label="2">每天两次</el-radio-button>
+                  <el-radio-button :label="3">每天三次</el-radio-button>
+                </el-radio-group>
               </el-form-item>
               <el-form-item v-else label="间隔天数">
                 <el-input-number v-model="plan.interval_days" :min="1" :max="30" />
@@ -673,7 +677,7 @@ function getMedicineName(id?: number) {
 
 function onFrequencyModeChange(plan: PlanForm) {
   if (plan.frequencyMode === "daily") {
-    plan.times_per_day = plan.times_per_day ?? 1;
+    plan.times_per_day = plan.times_per_day && [1, 2, 3].includes(plan.times_per_day) ? plan.times_per_day : 1;
   } else {
     plan.interval_days = plan.interval_days ?? 1;
   }
@@ -701,8 +705,8 @@ function validatePlans(): string | null {
       return `${label} 的持续天数需大于 0`;
     }
     if (plan.frequencyMode === "daily") {
-      if (!plan.times_per_day || plan.times_per_day < 1) {
-        return `${label} 的每天次数需大于 0`;
+      if (!plan.times_per_day || ![1, 2, 3].includes(plan.times_per_day)) {
+        return `${label} 的每天次数仅支持 1、2 或 3 次`;
       }
       plan.interval_days = null;
     } else {

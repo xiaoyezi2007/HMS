@@ -93,11 +93,24 @@ def expand_task_schedule(plan: NurseTaskPlan) -> List[datetime]:
             current_time += timedelta(days=interval)
     else:
         times_per_day = plan.times_per_day or 1
-        spacing_hours = 24 / times_per_day
-        for day_offset in range(plan.duration_days):
-            day_start = plan.start_time + timedelta(days=day_offset)
-            for idx in range(times_per_day):
-                occurrences.append(day_start + timedelta(hours=spacing_hours * idx))
+        start = plan.start_time
+        target_count = plan.duration_days * times_per_day
+        day_offset = 0
+        while len(occurrences) < target_count:
+            day_base = (start + timedelta(days=day_offset)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+            if times_per_day == 1:
+                dt = (start if day_offset == 0 else start + timedelta(days=day_offset))
+                if dt >= start:
+                    occurrences.append(dt)
+            else:
+                daily_times = [13, 20] if times_per_day == 2 else [8, 13, 19]
+                for t in daily_times:
+                    dt = day_base + timedelta(hours=t)
+                    if dt >= start:
+                        occurrences.append(dt)
+
+            day_offset += 1
 
     return occurrences
 
