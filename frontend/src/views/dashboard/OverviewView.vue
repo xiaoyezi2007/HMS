@@ -97,49 +97,40 @@
       </el-drawer>
     </template>
 
+    <template v-else-if="isDoctorRole">
+      <div class="doctor-overview">
+        <div class="title-block">
+          <div>
+            <h2>医生工作台</h2>
+            <p class="subtitle">快速进入就诊处理或住院管理</p>
+          </div>
+        </div>
+        <div class="doctor-grid">
+          <el-card
+            v-for="item in doctorShortcuts"
+            :key="item.title"
+            shadow="hover"
+            class="doctor-card"
+            @click="item.onClick()"
+          >
+            <div class="doctor-card__top">
+              <div class="doctor-card__icon">
+                <component :is="item.icon" />
+              </div>
+              <el-tag size="small" type="info">跳转</el-tag>
+            </div>
+            <div class="doctor-card__title">{{ item.title }}</div>
+            <p class="doctor-card__desc">{{ item.desc }}</p>
+          </el-card>
+        </div>
+      </div>
+    </template>
     <template v-else>
       <el-page-header content="多角色联合工作台" icon="">
         <template #title>
           <span>医院管理系统</span>
         </template>
-        <template #content>
-          <span>前端遵循《系统设计报告》，并已与当前 MySQL + FastAPI 后端联调</span>
-        </template>
       </el-page-header>
-
-      <el-row :gutter="16" class="mt-4">
-        <el-col :md="6" :sm="12" v-for="card in featureCards" :key="card.title">
-          <el-card shadow="hover" class="feature-card">
-            <div class="card-icon" :style="{ background: card.color }">
-              <component :is="card.icon" />
-            </div>
-            <h3>{{ card.title }}</h3>
-            <p>{{ card.desc }}</p>
-          </el-card>
-        </el-col>
-      </el-row>
-
-      <el-card class="mt-4">
-        <template #header>
-          <div class="card-header">
-            <span>开发说明</span>
-          </div>
-        </template>
-        <el-timeline>
-          <el-timeline-item timestamp="后端" type="success">
-            FastAPI + SQLModel + MySQL，提供认证、患者、医生、护士、药房等 REST 接口
-          </el-timeline-item>
-          <el-timeline-item timestamp="前端" type="primary">
-            Vite + Vue 3 + Element Plus，按角色动态授权，所有接口集中于 /auth 与 /api 前缀
-          </el-timeline-item>
-          <el-timeline-item timestamp="集成" type="warning">
-            通过 axios 拦截器携带 Token，Vite Proxy 映射到 uvicorn 8001 端口
-          </el-timeline-item>
-          <el-timeline-item timestamp="后续扩展" type="info">
-            可在 vue-router 中新增视图以覆盖护士长、统计分析、营收 BI 等设计报告中的扩展模块
-          </el-timeline-item>
-        </el-timeline>
-      </el-card>
     </template>
   </div>
 </template>
@@ -150,9 +141,11 @@ import dayjs from "dayjs";
 import { Reading, UserFilled, Suitcase, Histogram } from "@element-plus/icons-vue";
 import { useAuthStore } from "../../stores/auth";
 import { fetchWardOverview, fetchWardRecords, fetchWardTasks, type WardOverviewItem, type WardRecordItem, type WardTaskItem } from "../../api/modules/nurse";
+import { useRouter } from "vue-router";
 
 const auth = useAuthStore();
 const isNurseRole = computed(() => auth.currentRole === "护士");
+const isDoctorRole = computed(() => auth.currentRole === "医生");
 const wards = ref<WardOverviewItem[]>([]);
 const wardFlags = ref<Record<number, { hasPatient: boolean; dueSoon: boolean }>>({});
 const isLoading = ref(false);
@@ -161,6 +154,7 @@ const recordLoading = ref(false);
 const wardRecords = ref<WardRecordItem[]>([]);
 const wardTasks = ref<WardTaskItem[]>([]);
 const activeWard = ref<WardOverviewItem | null>(null);
+const router = useRouter();
 
 const featureCards = [
   {
@@ -186,6 +180,21 @@ const featureCards = [
     desc: "为管理员保留扩展入口，可挂接统计与营收分析",
     icon: Histogram,
     color: "#fef3c7"
+  }
+];
+
+const doctorShortcuts = [
+  {
+    title: "就诊处理",
+    desc: "查看待诊挂号，进入接诊与处方",
+    icon: Suitcase,
+    onClick: () => router.push("/workspace/doctor")
+  },
+  {
+    title: "住院管理",
+    desc: "查看在院患者，管理医嘱与任务",
+    icon: Reading,
+    onClick: () => router.push("/workspace/doctor/inpatients")
   }
 ];
 
@@ -497,5 +506,65 @@ onMounted(() => {
 
 .task-table {
   margin-top: 6px;
+}
+
+.doctor-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.doctor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.doctor-card {
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.doctor-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.doctor-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.doctor-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #312e81;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.doctor-card__icon :deep(svg) {
+  width: 22px;
+  height: 22px;
+}
+
+.doctor-card__title {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.doctor-card__desc {
+  margin: 0;
+  color: #475569;
+  line-height: 1.6;
 }
 </style>

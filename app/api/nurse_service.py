@@ -413,7 +413,7 @@ async def upsert_schedule_slot(
         nurse_stmt = select(Nurse.nurse_id).where(Nurse.nurse_id.in_(payload.nurse_ids))
         found_ids = set((await session.execute(nurse_stmt)).scalars().all())
         if len(found_ids) != len(set(payload.nurse_ids)):
-            raise HTTPException(status_code=400, detail="存在无效的护士ID")
+            raise HTTPException(status_code=400, detail="存在无效的护士信息")
 
     target_ward_id = payload.source_ward_id or payload.ward_id
     target_start = payload.source_start_time or payload.start_time

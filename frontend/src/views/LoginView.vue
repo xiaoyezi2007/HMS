@@ -3,7 +3,6 @@
     <el-card class="auth-card" shadow="always">
       <div class="title">
         <h2>医院管理系统</h2>
-        <p>统一登录入口 · 支持患者 / 医生 / 护士 / 药师 / 管理员</p>
       </div>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="立即登录" name="login">

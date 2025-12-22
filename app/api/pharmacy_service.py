@@ -224,7 +224,7 @@ async def create_prescription(
             if delta > 0:
                 med = await session.get(Medicine, med_id)
                 if not med or med.stock < delta:
-                    name = med.name if med else str(med_id)
+                    name = med.name if med else "该药品"
                     insufficient.append(name)
         if insufficient:
             raise HTTPException(status_code=400, detail=f"库存不足: {', '.join(insufficient)}")
@@ -271,7 +271,7 @@ async def create_prescription(
     for item in pres_in.items:
         med = await session.get(Medicine, item.medicine_id)
         if not med or med.stock < item.quantity:
-            name = med.name if med else str(item.medicine_id)
+            name = med.name if med else "该药品"
             insufficient_new.append(name)
             continue
     if insufficient_new:

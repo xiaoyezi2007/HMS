@@ -368,7 +368,7 @@ async def get_patient_registration_history(
 
     if range == "current":
         if not current_reg_id:
-            raise HTTPException(status_code=400, detail="current 范围需要提供 current_reg_id")
+            raise HTTPException(status_code=400, detail="当前范围需要指定当前挂号")
         stmt = stmt.where(Registration.reg_id == current_reg_id)
     else:
         days = 7 if range == "7d" else 30
@@ -576,7 +576,12 @@ async def list_my_department_doctors(
     doctor: Doctor = Depends(get_current_doctor),
     session: AsyncSession = Depends(get_session)
 ):
-    stmt = select(Doctor).where(Doctor.dept_id == doctor.dept_id)
+    stmt = (
+        select(Doctor)
+        .join(UserAccount, UserAccount.phone == Doctor.phone)
+        .where(Doctor.dept_id == doctor.dept_id)
+        .where(UserAccount.status == "启用")
+    )
     doctors = (await session.execute(stmt)).scalars().all()
     return [
         {
@@ -641,9 +646,16 @@ async def hospitalize_patient(
         raise HTTPException(status_code=400, detail="该病房已满，请选择其他病房")
 
     target_doc_id = payload.hosp_doctor_id or doctor.doctor_id
-    target_doc = await session.get(Doctor, target_doc_id)
-    if not target_doc or target_doc.dept_id != doctor.dept_id:
-        raise HTTPException(status_code=400, detail="请选择当前科室的住院医生")
+    target_doc_stmt = (
+        select(Doctor)
+        .join(UserAccount, UserAccount.phone == Doctor.phone)
+        .where(Doctor.doctor_id == target_doc_id)
+        .where(Doctor.dept_id == doctor.dept_id)
+        .where(UserAccount.status == "启用")
+    )
+    target_doc = (await session.execute(target_doc_stmt)).scalars().first()
+    if not target_doc:
+        raise HTTPException(status_code=400, detail="请选择当前科室的有效住院医生")
 
     hosp = Hospitalization(
         ward_id=ward.ward_id,
