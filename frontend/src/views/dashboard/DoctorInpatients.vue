@@ -30,7 +30,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="ward_id" label="病房号" width="120" />
-        <el-table-column label="住院单" width="130">
+        <el-table-column label="历史病历" width="130">
           <template #default="scope">
             <div class="hosp-ticket">
               <el-button size="small" type="primary" link @click="openHospDetail(scope.row)">查看</el-button>
@@ -51,17 +51,16 @@
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="scope">
             <el-button size="small" type="primary" link @click="openTaskDialog(scope.row)">添加护理任务</el-button>
-            <el-button size="small" type="primary" link @click="openHistoryDialog(scope.row)">查看接诊记录</el-button>
           </template>
         </el-table-column>
       </el-table>
       <el-empty v-if="!loading && !inpatients.length" description="暂无在院患者" />
     </el-card>
 
-    <el-dialog v-model="detailVisible" title="住院单" width="460px" destroy-on-close>
+    <el-dialog v-model="detailVisible" title="住院表" width="460px" destroy-on-close>
       <div v-if="detailItem">
         <el-descriptions :column="1" border>
-          <el-descriptions-item label="患者">{{ detailItem.patient_name }} (ID: {{ detailItem.patient_id }})</el-descriptions-item>
+          <el-descriptions-item label="患者">{{ detailItem.patient_name }}</el-descriptions-item>
           <el-descriptions-item label="病房号">{{ detailItem.ward_id }}</el-descriptions-item>
           <el-descriptions-item label="病房类型">{{ detailItem.ward_type }}</el-descriptions-item>
           <el-descriptions-item label="入院时间">{{ formatDate(detailItem.in_date) }}</el-descriptions-item>
@@ -70,7 +69,7 @@
       </div>
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
-        <el-button type="primary" @click="detailItem && openHistoryDialog(detailItem)">查看接诊记录</el-button>
+        <el-button type="primary" @click="detailItem && openHistoryDialog(detailItem)">查看历史病历</el-button>
       </template>
     </el-dialog>
 
@@ -228,15 +227,12 @@
 
     <el-dialog
       v-model="historyDialogVisible"
-      :title="historyContext ? `接诊记录 · ${historyContext.patient_name}` : '接诊记录'"
+      :title="'历史病历'"
       width="780px"
       destroy-on-close
     >
       <div v-if="historyContext" class="history-header">
-        <div>
-          <div class="history-name">{{ historyContext.patient_name }}</div>
-          <div class="history-meta">患者 ID：{{ historyContext.patient_id }}</div>
-        </div>
+        <div class="history-name">{{ historyContext.patient_name }}</div>
         <el-radio-group v-model="historyRange" size="small" class="history-range">
           <el-radio-button label="current">本次挂号</el-radio-button>
           <el-radio-button label="7d">近 7 天</el-radio-button>
@@ -258,7 +254,6 @@
         <el-collapse-item v-for="item in historyItems" :key="item.reg_id" :name="String(item.reg_id)">
           <template #title>
             <div class="history-title">
-              <span>#{{ item.reg_id }}</span>
               <span class="history-date">{{ formatDate(item.reg_date) }}</span>
               <el-tag size="small" type="info">{{ normalizeRegStatus(item.status) }}</el-tag>
               <el-tag v-if="item.is_current" size="small" type="success">本次</el-tag>
@@ -538,7 +533,7 @@ async function loadHistory() {
     historyItems.value = data;
   } catch (err: any) {
     historyItems.value = [];
-    historyError.value = err?.response?.data?.detail ?? "接诊记录加载失败";
+    historyError.value = err?.response?.data?.detail ?? "历史病历加载失败";
     ElMessage.error(historyError.value);
   } finally {
     historyLoading.value = false;

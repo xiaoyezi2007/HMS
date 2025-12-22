@@ -84,7 +84,7 @@
         <div class="option-row">
           <div class="option-col">
             <el-card class="option-card" :body-style="{ padding: '8px' }">
-              <div style="display:flex; align-items:center; gap:8px">
+              <div class="option-head">
                 <Document class="option-icon" />
                 <div>
                   <div style="font-weight:700; font-size:14px">书写病历</div>
@@ -92,14 +92,14 @@
                 </div>
               </div>
               <div class="action-row">
-                <el-button type="primary" size="small" @click.stop="openRecordDialog">书写</el-button>
+                <el-button class="action-btn-yellow" size="small" @click.stop="openRecordDialog">书写</el-button>
               </div>
             </el-card>
           </div>
 
           <div class="option-col">
             <el-card class="option-card" :body-style="{ padding: '8px' }">
-              <div style="display:flex; align-items:center; gap:8px">
+              <div class="option-head">
                 <FirstAidKit class="option-icon" />
                 <div>
                   <div style="font-weight:700; font-size:14px">开具检查</div>
@@ -107,14 +107,14 @@
                 </div>
               </div>
               <div class="action-row">
-                <el-button type="warning" size="small" @click="onCreateExam">开具</el-button>
+                <el-button class="action-btn-yellow" size="small" @click="onCreateExam">开具</el-button>
               </div>
             </el-card>
           </div>
 
           <div class="option-col">
             <el-card class="option-card" :body-style="{ padding: '8px' }">
-              <div style="display:flex; align-items:center; gap:8px">
+              <div class="option-head">
                 <List class="option-icon" />
                 <div>
                   <div style="font-weight:700; font-size:14px">开具处方</div>
@@ -122,29 +122,29 @@
                 </div>
               </div>
               <div class="action-row">
-                <el-button type="success" size="small" @click="onOpenPrescription">开具</el-button>
+                <el-button class="action-btn-yellow" size="small" @click="onOpenPrescription">开具</el-button>
               </div>
             </el-card>
           </div>
 
           <div class="option-col">
             <el-card class="option-card" :body-style="{ padding: '8px' }">
-              <div style="display:flex; align-items:center; gap:8px">
-                <View class="option-icon" />
+              <div class="option-head">
+                <BedIcon class="option-icon" />
                 <div>
                   <div style="font-weight:700; font-size:14px">办理住院</div>
                   <div style="color:var(--el-text-color-secondary); font-size:12px">为患者办理住院手续</div>
                 </div>
               </div>
               <div class="action-row">
-                <el-button type="info" size="small" @click="openAdmitDialog">办理</el-button>
+                <el-button class="action-btn-yellow" size="small" @click="openAdmitDialog">办理</el-button>
               </div>
             </el-card>
           </div>
 
           <div class="option-col">
             <el-card class="option-card" :body-style="{ padding: '8px' }">
-              <div style="display:flex; align-items:center; gap:8px">
+              <div class="option-head">
                 <CreditCard class="option-icon" />
                 <div>
                   <div style="font-weight:700; font-size:14px">完成办理</div>
@@ -262,12 +262,37 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
-import { FirstAidKit, Document, List, View, CreditCard } from "@element-plus/icons-vue";
+import { computed, onMounted, reactive, ref, watch, defineComponent, h } from "vue";
+import { FirstAidKit, Document, List, CreditCard } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { startHandling, finishHandling, submitMedicalRecord, fetchConsultationInfo, fetchMedicalRecordByReg, createExamination, fetchExaminations, fetchDoctorWards, hospitalizePatient, exportTransferForm, fetchPatientRegistrationHistory, fetchDeptDoctors, type DoctorPatientRegistrationHistoryItem, type HistoryRange, type WardInfo, type DoctorBrief } from "../../api/modules/doctor";
 import { fetchPatientById } from "../../api/modules/patient";
+
+const BedIcon = defineComponent({
+  name: "BedIcon",
+  inheritAttrs: false,
+  setup(_props, { attrs }) {
+    return () =>
+      h(
+        "svg",
+        {
+          ...attrs,
+          viewBox: "0 0 24 24",
+          fill: "none",
+          stroke: "currentColor",
+          "stroke-width": 1.5,
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round"
+        },
+        [
+          h("path", { d: "M3.5 11.5 12 4l8.5 7.5V20a0.8 0.8 0 0 1-0.8 0.8H4.3A0.8 0.8 0 0 1 3.5 20Z" }),
+          h("path", { d: "M12 10.5v5" }),
+          h("path", { d: "M9.5 13h5" })
+        ]
+      );
+  }
+});
 
 const route = useRoute();
 const router = useRouter();
@@ -655,6 +680,7 @@ watch(historyRange, () => {
   cursor: pointer;
   transition: box-shadow .18s ease, transform .12s ease;
   border-radius: 8px;
+  min-height: 150px;
 }
 .option-card:hover {
   box-shadow: 0 6px 14px rgba(13,27,42,0.10);
@@ -699,12 +725,33 @@ watch(historyRange, () => {
 }
 .option-col { min-height: 84px; }
 
+.option-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 64px;
+}
+
 /* Align action button to card bottom/right */
 .action-row {
   margin-top: 8px;
   display: flex;
   justify-content: flex-end;
   align-items: flex-end;
+}
+
+.action-btn-yellow {
+  background: #fcd34d;
+  border-color: #fcd34d;
+  color: #ffffff;
+}
+
+.action-btn-yellow:hover,
+.action-btn-yellow:focus,
+.action-btn-yellow:active {
+  background: #fbbf24;
+  border-color: #fbbf24;
+  color: #ffffff;
 }
 
 .mt-3 { margin-top: 16px; }

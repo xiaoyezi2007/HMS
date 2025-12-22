@@ -99,30 +99,18 @@
 
     <template v-else-if="isDoctorRole">
       <div class="doctor-overview">
-        <div class="title-block">
-          <div>
-            <h2>医生工作台</h2>
-            <p class="subtitle">快速进入就诊处理或住院管理</p>
-          </div>
-        </div>
-        <div class="doctor-grid">
-          <el-card
-            v-for="item in doctorShortcuts"
-            :key="item.title"
-            shadow="hover"
-            class="doctor-card"
-            @click="item.onClick()"
-          >
-            <div class="doctor-card__top">
-              <div class="doctor-card__icon">
+        <h2 class="page-title">首页</h2>
+        <el-row :gutter="16">
+          <el-col v-for="item in doctorShortcuts" :key="item.title" :lg="12" :md="12" :sm="12" :xs="24">
+            <el-card shadow="hover" class="home-card" @click="item.onClick()">
+              <div class="home-card__icon" :style="{ background: item.color }">
                 <component :is="item.icon" />
               </div>
-              <el-tag size="small" type="info">跳转</el-tag>
-            </div>
-            <div class="doctor-card__title">{{ item.title }}</div>
-            <p class="doctor-card__desc">{{ item.desc }}</p>
-          </el-card>
-        </div>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.desc }}</p>
+            </el-card>
+          </el-col>
+        </el-row>
       </div>
     </template>
     <template v-else-if="isAdminRole">
@@ -156,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, h } from "vue";
 import dayjs from "dayjs";
 import { Reading, UserFilled, Suitcase, Histogram, Management, OfficeBuilding, Coin } from "@element-plus/icons-vue";
 import { useAuthStore } from "../../stores/auth";
@@ -167,6 +155,19 @@ const auth = useAuthStore();
 const isNurseRole = computed(() => auth.currentRole === "护士");
 const isDoctorRole = computed(() => auth.currentRole === "医生");
 const isAdminRole = computed(() => auth.currentRole === "管理员");
+const BedIcon = {
+  name: "BedIcon",
+  render() {
+    return h(
+      "svg",
+      { viewBox: "0 0 24 24", width: "1em", height: "1em", fill: "currentColor" },
+      [
+        h("rect", { x: "3", y: "5", width: "6", height: "6", rx: "1" }),
+        h("path", { d: "M3 13.5h18a1 1 0 0 1 1 1V19h-2v-3h-6v3h-2v-3H5v3H3z" })
+      ]
+    );
+  }
+};
 const wards = ref<WardOverviewItem[]>([]);
 const wardFlags = ref<Record<number, { hasPatient: boolean; dueSoon: boolean }>>({});
 const isLoading = ref(false);
@@ -209,12 +210,14 @@ const doctorShortcuts = [
     title: "就诊处理",
     desc: "查看待诊挂号，进入接诊与处方",
     icon: Suitcase,
+    color: "#e0f2fe",
     onClick: () => router.push("/workspace/doctor")
   },
   {
     title: "住院管理",
     desc: "查看在院患者，管理医嘱与任务",
-    icon: Reading,
+    icon: BedIcon,
+    color: "#e2e8f0",
     onClick: () => router.push("/workspace/doctor/inpatients")
   }
 ];
@@ -370,6 +373,10 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.page-title {
+  margin: 0 0 16px;
 }
 
 .title-block {
@@ -566,58 +573,33 @@ onMounted(() => {
   gap: 16px;
 }
 
-.doctor-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-}
-
-.doctor-card {
+.home-card {
   cursor: pointer;
-  border: 1px solid #e2e8f0;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition: transform 0.2s ease;
+  min-height: 160px;
 }
 
-.doctor-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+.home-card:hover {
+  transform: translateY(-4px);
 }
 
-.doctor-card__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.doctor-card__icon {
-  width: 40px;
-  height: 40px;
+.home-card__icon {
+  width: 48px;
+  height: 48px;
   border-radius: 12px;
-  background: #312e81;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  margin-bottom: 12px;
 }
 
-.doctor-card__icon :deep(svg) {
-  width: 22px;
-  height: 22px;
+.home-card__icon :deep(svg) {
+  width: 24px;
+  height: 24px;
 }
 
-.doctor-card__title {
-  font-weight: 700;
-  color: #0f172a;
-  font-size: 18px;
-  margin-bottom: 4px;
-}
-
-.doctor-card__desc {
-  margin: 0;
-  color: #475569;
-  line-height: 1.6;
+.home-card h3 {
+  margin: 0 0 8px;
 }
 
 .admin-overview {
