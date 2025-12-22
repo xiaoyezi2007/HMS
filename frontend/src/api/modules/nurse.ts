@@ -2,6 +2,7 @@ import http from "../http";
 
 export interface NurseScheduleItem {
   schedule_id: number;
+  ward_id: number;
   nurse_name: string;
   ward_type: string;
   start_time: string;
@@ -38,6 +39,7 @@ export interface WardOverviewItem {
   ward_id: number;
   ward_type: string;
   bed_count: number;
+  occupied_count: number;
 }
 
 export interface WardRecordItem {
@@ -110,8 +112,8 @@ export interface TodayTaskItem {
   nurse_name: string;
 }
 
-export function fetchMySchedules() {
-  return http.get<NurseScheduleItem[]>("/api/nurse/my_schedules");
+export function fetchMySchedules(includeHistory = false) {
+  return http.get<NurseScheduleItem[]>("/api/nurse/my_schedules", { params: { include_history: includeHistory } });
 }
 
 export function fetchNurseProfile() {

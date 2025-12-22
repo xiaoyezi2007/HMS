@@ -5,11 +5,12 @@
         <div>
           <h3>接诊 - 挂号 {{ regId }}</h3>
           <div v-if="patient">
-            <small>患者：{{ patient.name }} （ID: {{ patient.patient_id }}）</small>
+            <small>患者：{{ patient.name }}</small>
           </div>
         </div>
-        <div>
-          <el-button type="default" @click="onExit" style="margin-right:8px">退出接诊</el-button>
+        <div class="header-actions">
+          <el-button type="primary" link @click="openHistoryDialog" style="margin-right:8px">查询历史病历</el-button>
+          <el-button type="default" @click="onExit">退出接诊</el-button>
         </div>
       </div>
     </el-card>
@@ -23,6 +24,24 @@
         <div class="ward-actions">
           <el-button type="info" size="small" :loading="transferLoading" @click="onTransfer">导出转院单</el-button>
         </div>
+      </div>
+      <div class="doctor-select-row">
+        <span class="doctor-select-label">住院主管医生</span>
+        <el-select
+          v-model="selectedHospDoctorId"
+          placeholder="选择医生"
+          size="small"
+          style="width: 240px"
+          filterable
+          :loading="deptDoctors.length === 0"
+        >
+          <el-option
+            v-for="doc in deptDoctors"
+            :key="doc.doctor_id"
+            :label="doc.title ? `${doc.name}（${doc.title}）` : doc.name"
+            :value="doc.doctor_id"
+          />
+        </el-select>
       </div>
       <el-table
         :data="wards"
@@ -186,22 +205,74 @@
         </el-timeline-item>
       </el-timeline>
     </el-card>
+
+    <el-dialog
+      v-model="historyDialogVisible"
+      title="查询历史病历"
+      width="760px"
+      destroy-on-close
+    >
+      <div class="history-header">
+        <div>
+          <div class="history-name">{{ patient?.name || '患者' }}</div>
+        </div>
+        <el-radio-group v-model="historyRange" size="small" class="history-range">
+          <el-radio-button label="current">上次</el-radio-button>
+          <el-radio-button label="7d">近7天</el-radio-button>
+          <el-radio-button label="30d">近1个月</el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <el-alert
+        v-if="historyError"
+        class="history-alert"
+        type="error"
+        show-icon
+        closable
+        :title="historyError"
+        @close="historyError = ''"
+      />
+
+      <el-skeleton v-if="historyLoading" :rows="5" animated />
+      <el-empty v-else-if="!historyItems.length" description="暂无符合条件的挂号" />
+      <el-collapse v-else v-model="historyActivePanels" class="history-collapse" accordion>
+        <el-collapse-item v-for="item in historyItems" :key="item.reg_id" :name="String(item.reg_id)">
+          <template #title>
+            <div class="history-title">
+              <span class="history-date">{{ new Date(item.reg_date).toLocaleString() }}</span>
+              <el-tag size="small" type="info">{{ normalizeRegStatus(item.status) }}</el-tag>
+              <el-tag size="small" type="warning">{{ item.reg_type }}</el-tag>
+              <el-tag v-if="item.is_current" size="small" type="success">本次</el-tag>
+            </div>
+          </template>
+          <div class="history-body">
+            <p><strong>主诉：</strong>{{ item.record?.complaint || "尚未填写" }}</p>
+            <p><strong>诊断：</strong>{{ item.record?.diagnosis || "尚未填写" }}</p>
+            <p><strong>建议：</strong>{{ item.record?.suggestion || "—" }}</p>
+            <div class="history-body-meta">
+              <span>就诊日期：{{ item.visit_date ? new Date(item.visit_date).toLocaleString() : "-" }}</span>
+              <span>费用：{{ item.fee?.toFixed ? item.fee.toFixed(2) : item.fee }}</span>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { FirstAidKit, Document, List, View, CreditCard } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import { startHandling, finishHandling, submitMedicalRecord, fetchConsultationInfo, fetchMedicalRecordByReg, createExamination, fetchExaminations, fetchDoctorWards, hospitalizePatient, exportTransferForm, WardInfo } from "../../api/modules/doctor";
+import { startHandling, finishHandling, submitMedicalRecord, fetchConsultationInfo, fetchMedicalRecordByReg, createExamination, fetchExaminations, fetchDoctorWards, hospitalizePatient, exportTransferForm, fetchPatientRegistrationHistory, fetchDeptDoctors, type DoctorPatientRegistrationHistoryItem, type HistoryRange, type WardInfo, type DoctorBrief } from "../../api/modules/doctor";
 import { fetchPatientById } from "../../api/modules/patient";
 
 const route = useRoute();
 const router = useRouter();
 const regId = Number(route.params.reg_id || route.query.reg_id || 0);
-
-const patientId = Number(route.query.patient_id || 0);
+const patientIdQuery = Number(route.query.patient_id || 0);
+const currentDoctorId = ref<number | null>(null);
 
 const patient = ref(null as any);
 const recordDialogVisible = ref(false);
@@ -218,6 +289,16 @@ const selectedWardId = ref<number | null>(null);
 const admitLoading = ref(false);
 const transferLoading = ref(false);
 const admitDialogVisible = ref(false);
+const deptDoctors = ref<DoctorBrief[]>([]);
+const selectedHospDoctorId = ref<number | null>(null);
+
+// 历史病历
+const historyDialogVisible = ref(false);
+const historyRange = ref<HistoryRange>("current");
+const historyItems = ref<DoctorPatientRegistrationHistoryItem[]>([]);
+const historyLoading = ref(false);
+const historyError = ref("");
+const historyActivePanels = ref<string[]>([]);
 
 async function ensureStarted() {
   // 检查挂号当前状态，仅在仍为“排队中/待就诊/WAITING”时才调用 startHandling
@@ -226,6 +307,9 @@ async function ensureStarted() {
     const reg = data?.registration;
     if (data?.patient) {
       patient.value = data.patient;
+    }
+    if (reg?.doctor_id) {
+      currentDoctorId.value = reg.doctor_id;
     }
     const status = reg?.status;
     if (isWaitingStatus(status)) {
@@ -251,6 +335,45 @@ async function ensureStarted() {
   }
 }
 
+async function loadHistory() {
+  const pid = patient.value?.patient_id || patientIdQuery;
+  if (!pid) {
+    historyError.value = "未获取到患者信息";
+    historyItems.value = [];
+    return;
+  }
+  historyLoading.value = true;
+  historyError.value = "";
+  try {
+    // 后端的 range=current 仅返回当前挂号；为了拿到“最近一次已完成”的记录，这里在上次视图下用 30 天已完成记录再行筛选
+    const rangeParam: HistoryRange = historyRange.value === "current" ? "30d" : historyRange.value;
+    const { data } = await fetchPatientRegistrationHistory(pid, { range: rangeParam, current_reg_id: regId });
+    let items = data || [];
+
+    if (historyRange.value === "current") {
+      // “上次”仅展示最近一次已完成的病历（若存在），否则为空
+      const sorted = [...items].sort((a, b) => new Date(b.reg_date).getTime() - new Date(a.reg_date).getTime());
+      const latestFinished = sorted.find((x) => isFinishedStatus(x.status) && x.reg_id !== regId)
+        ?? sorted.find((x) => isFinishedStatus(x.status))
+        ?? null;
+      items = latestFinished ? [latestFinished] : [];
+    }
+
+    historyItems.value = items;
+    historyActivePanels.value = items.length ? [String(items[0].reg_id)] : [];
+  } catch (err: any) {
+    historyError.value = err?.response?.data?.detail ?? "查询历史病历失败";
+    historyItems.value = [];
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+function openHistoryDialog() {
+  historyDialogVisible.value = true;
+  void loadHistory();
+}
+
 function isWaitingStatus(s: string | null | undefined) {
   if (!s) return false;
   const v = String(s).toLowerCase();
@@ -259,9 +382,9 @@ function isWaitingStatus(s: string | null | undefined) {
 
 async function loadPatient() {
   // 优先通过 query 中的 patient_id 获取患者；如果没有，则请求后端的 consultation info
-  if (patientId) {
+  if (patientIdQuery) {
     try {
-      const { data } = await fetchPatientById(patientId);
+      const { data } = await fetchPatientById(patientIdQuery);
       patient.value = data;
       return;
     } catch (err) {
@@ -359,6 +482,7 @@ async function submitExam() {
 function openAdmitDialog() {
   admitDialogVisible.value = true;
   void loadWards();
+  void loadDeptDoctors();
 }
 
 async function onFinish() {
@@ -374,10 +498,41 @@ async function onFinish() {
   }
 }
 
+watch(historyDialogVisible, (visible) => {
+  if (!visible) {
+    historyItems.value = [];
+    historyError.value = "";
+    historyActivePanels.value = [];
+  }
+});
+
 function onExit() {
   // 仅退出接诊页面，不改变挂号状态（保持为就诊中）
   ElMessage.info("已退出接诊，挂号仍为就诊中，可在医生端继续处理");
   router.push({ path: "/workspace/doctor" });
+}
+
+function normalizeRegStatus(value?: string | null) {
+  if (!value) return "未知";
+  const map: Record<string, string> = {
+    WAITING: "排队中",
+    IN_PROGRESS: "就诊中",
+    FINISHED: "已完成",
+    CANCELLED: "已取消",
+    EXPIRED: "已过期",
+    排队中: "排队中",
+    就诊中: "就诊中",
+    已完成: "已完成",
+    已取消: "已取消",
+    已过期: "已过期"
+  };
+  return map[value] || value;
+}
+
+function isFinishedStatus(value?: string | null) {
+  if (!value) return false;
+  const v = String(value).toUpperCase();
+  return v === "FINISHED" || v === "已完成";
 }
 
 async function loadWards() {
@@ -394,11 +549,33 @@ async function loadWards() {
   }
 }
 
+async function loadDeptDoctors() {
+  try {
+    const { data } = await fetchDeptDoctors();
+    deptDoctors.value = data || [];
+    const preferredId = currentDoctorId.value;
+    if (selectedHospDoctorId.value && data.some((d) => d.doctor_id === selectedHospDoctorId.value)) {
+      return;
+    }
+    if (preferredId && data.some((d) => d.doctor_id === preferredId)) {
+      selectedHospDoctorId.value = preferredId;
+      return;
+    }
+    selectedHospDoctorId.value = data[0]?.doctor_id ?? null;
+  } catch (err) {
+    console.error("loadDeptDoctors error", err);
+  }
+}
+
 const selectedWard = computed(() => wards.value.find((w) => w.ward_id === selectedWardId.value) ?? null);
 
 async function confirmAdmit() {
   if (!selectedWardId.value) {
     ElMessage.warning("请先选择一个可用病房");
+    return;
+  }
+  if (!selectedHospDoctorId.value) {
+    ElMessage.warning("请选择住院主管医生");
     return;
   }
   const ward = wards.value.find((w) => w.ward_id === selectedWardId.value);
@@ -408,7 +585,7 @@ async function confirmAdmit() {
   }
   admitLoading.value = true;
   try {
-    await hospitalizePatient(regId, { ward_id: selectedWardId.value });
+    await hospitalizePatient(regId, { ward_id: selectedWardId.value, hosp_doctor_id: selectedHospDoctorId.value });
     ElMessage.success("住院办理成功");
     admitDialogVisible.value = false;
     await loadWards();
@@ -455,6 +632,13 @@ onMounted(async () => {
   await loadPatient();
   await loadExams();
   await loadWards();
+  await loadDeptDoctors();
+});
+
+watch(historyRange, () => {
+  if (historyDialogVisible.value) {
+    void loadHistory();
+  }
 });
 </script>
 
@@ -533,6 +717,17 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
 }
+.doctor-select-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.doctor-select-label {
+  width: 96px;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
 .is-selected-row {
   background: rgba(59, 130, 246, 0.08);
 }
@@ -543,5 +738,48 @@ onMounted(async () => {
   margin-top: 12px;
   color: #475569;
   font-size: 14px;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.history-name {
+  font-weight: 700;
+  font-size: 15px;
+}
+.history-range {
+  display: flex;
+  gap: 8px;
+}
+.history-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.history-date {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.history-body {
+  padding: 8px 4px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.history-body-meta {
+  display: flex;
+  gap: 16px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.history-alert {
+  margin-bottom: 12px;
 }
 </style>

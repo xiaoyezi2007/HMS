@@ -37,6 +37,12 @@ export interface DoctorInpatientItem {
   reg_id: number;
 }
 
+export interface DoctorBrief {
+  doctor_id: number;
+  name: string;
+  title?: string;
+}
+
 export interface NurseTaskMedicineItemPayload {
   medicine_id: number;
   name?: string;
@@ -166,8 +172,12 @@ export function createNurseTasks(hospId: number, payload: NurseTaskBatchCreatePa
   return http.post(`/api/doctor/hospitalizations/${hospId}/tasks`, payload);
 }
 
-export function hospitalizePatient(regId: number, payload: { ward_id: number }) {
+export function hospitalizePatient(regId: number, payload: { ward_id: number; hosp_doctor_id?: number }) {
   return http.post(`/api/doctor/consultations/${regId}/hospitalize`, payload);
+}
+
+export function fetchDeptDoctors() {
+  return http.get<DoctorBrief[]>("/api/doctor/dept/doctors");
 }
 
 export function exportTransferForm(regId: number) {

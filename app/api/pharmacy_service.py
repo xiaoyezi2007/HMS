@@ -215,14 +215,18 @@ async def create_prescription(
         # build new map
         new_map = {item.medicine_id: item.quantity for item in pres_in.items}
 
-        # first, check stock availability for increases
+        # first, check stock availability for increases; collect all不足
+        insufficient: list[str] = []
         for med_id, new_qty in new_map.items():
             old_qty = old_map.get(med_id, 0)
             delta = new_qty - old_qty
             if delta > 0:
                 med = await session.get(Medicine, med_id)
                 if not med or med.stock < delta:
-                    raise HTTPException(status_code=400, detail=f"库存不足: 药品 {med_id}")
+                    name = med.name if med else str(med_id)
+                    insufficient.append(name)
+        if insufficient:
+            raise HTTPException(status_code=400, detail=f"库存不足: {', '.join(insufficient)}")
 
         # apply stock adjustments
         for med_id, new_qty in new_map.items():
@@ -262,10 +266,18 @@ async def create_prescription(
     session.add(new_pres)
     await session.flush()
 
+    insufficient_new: list[str] = []
     for item in pres_in.items:
         med = await session.get(Medicine, item.medicine_id)
         if not med or med.stock < item.quantity:
-            raise HTTPException(status_code=400, detail=f"库存不足: 药品 {item.medicine_id}")
+            name = med.name if med else str(item.medicine_id)
+            insufficient_new.append(name)
+            continue
+    if insufficient_new:
+        raise HTTPException(status_code=400, detail=f"库存不足: {', '.join(insufficient_new)}")
+
+    for item in pres_in.items:
+        med = await session.get(Medicine, item.medicine_id)
         med.stock -= item.quantity
         session.add(med)
         total += med.price * item.quantity

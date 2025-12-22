@@ -16,7 +16,13 @@
             <span class="ward-type">{{ ward.ward_type }}</span>
           </div>
           <div class="bed-list">
-            <div v-for="bed in ward.bed_count" :key="bed" class="bed-slot">床 {{ bed }}</div>
+            <div
+              v-for="bed in ward.bed_count"
+              :key="bed"
+              :class="['bed-slot', { occupied: bed <= ward.occupied_count }]"
+            >
+              床 {{ bed }}
+            </div>
           </div>
         </div>
       </div>
@@ -326,6 +332,13 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.bed-slot.occupied {
+  border-color: #16a34a;
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 600;
 }
 
 .drawer-title {

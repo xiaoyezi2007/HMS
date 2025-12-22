@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -191,20 +191,25 @@ async def list_today_tasks(
 
 @router.get("/my_schedules", response_model=List[ScheduleRead])
 async def get_my_schedules(
+    include_history: bool = Query(False, description="是否包含历史排班"),
     nurse: Nurse = Depends(get_current_nurse),
     session: AsyncSession = Depends(get_session)
 ):
     now = datetime.now()
     stmt = select(NurseSchedule, Ward).join(Ward).where(
         NurseSchedule.nurse_id == nurse.nurse_id,
-        NurseSchedule.end_time >= now
     )
+    if not include_history:
+        stmt = stmt.where(NurseSchedule.end_time >= now)
+    stmt = stmt.order_by(NurseSchedule.start_time.desc())
+
     results = await session.execute(stmt)
 
     schedule_list = []
     for schedule, ward in results:
         schedule_list.append(ScheduleRead(
             schedule_id=schedule.schedule_id,
+            ward_id=ward.ward_id,
             nurse_name=nurse.name,
             ward_type=ward.type,
             start_time=schedule.start_time,
@@ -264,7 +269,24 @@ async def get_ward_overview(
             NurseSchedule.nurse_id == nurse.nurse_id
         )
     wards = (await session.execute(ward_stmt)).scalars().unique().all()
-    return [WardOverviewItem(ward_id=w.ward_id, ward_type=w.type, bed_count=w.bed_count) for w in wards]
+
+    occupancy_stmt = (
+        select(Hospitalization.ward_id, func.count().label("occupied"))
+        .where(Hospitalization.status == "在院")
+        .group_by(Hospitalization.ward_id)
+    )
+    occupancy_rows = await session.execute(occupancy_stmt)
+    occupancy_map = {row.ward_id: row.occupied for row in occupancy_rows}
+
+    return [
+        WardOverviewItem(
+            ward_id=w.ward_id,
+            ward_type=w.type,
+            bed_count=w.bed_count,
+            occupied_count=int(occupancy_map.get(w.ward_id, 0)),
+        )
+        for w in wards
+    ]
 
 
 @router.get("/ward/{ward_id}/records", response_model=List[WardRecordItem])

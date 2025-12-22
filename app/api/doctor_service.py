@@ -40,6 +40,7 @@ router = APIRouter()
 
 class HospitalizePayload(SQLModel):
     ward_id: int
+    hosp_doctor_id: Optional[int] = None
 
 
 # --- 辅助函数：获取当前登录的医生对象 ---
@@ -571,6 +572,23 @@ async def get_consultation_info(
     return {"registration": registration, "patient": patient}
 
 
+@router.get("/dept/doctors")
+async def list_my_department_doctors(
+    doctor: Doctor = Depends(get_current_doctor),
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(Doctor).where(Doctor.dept_id == doctor.dept_id)
+    doctors = (await session.execute(stmt)).scalars().all()
+    return [
+        {
+            "doctor_id": d.doctor_id,
+            "name": d.name,
+            "title": d.title,
+        }
+        for d in doctors
+    ]
+
+
 @router.post("/consultations/{reg_id}/hospitalize")
 async def hospitalize_patient(
     reg_id: int,
@@ -602,10 +620,15 @@ async def hospitalize_patient(
     if occupied >= ward.bed_count:
         raise HTTPException(status_code=400, detail="该病房已满，请选择其他病房")
 
+    target_doc_id = payload.hosp_doctor_id or doctor.doctor_id
+    target_doc = await session.get(Doctor, target_doc_id)
+    if not target_doc or target_doc.dept_id != doctor.dept_id:
+        raise HTTPException(status_code=400, detail="请选择当前科室的住院医生")
+
     hosp = Hospitalization(
         ward_id=ward.ward_id,
         status="在院",
-        hosp_doctor_id=doctor.doctor_id,
+        hosp_doctor_id=target_doc.doctor_id,
         record_id=record.record_id
     )
     session.add(hosp)

@@ -317,7 +317,7 @@ const flattenedRows = computed<TableRow[]>(() => {
 });
 
 function formatRange(start: string, end: string) {
-  return `${dayjs(start).format("YYYY-MM-DD HH:mm")} ~ ${dayjs(end).format("HH:mm")}`;
+  return `${dayjs(start).format("YYYY-MM-DD HH:mm")} ~ ${dayjs(end).format("YYYY-MM-DD HH:mm")}`;
 }
 
 function formatNurseLabel(nurse: NurseOption) {

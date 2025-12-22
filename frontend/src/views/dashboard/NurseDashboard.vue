@@ -7,11 +7,14 @@
             <span>我的排班</span>
             <small>按病房类型汇总，当班护士可快速浏览任务</small>
           </div>
-          <el-button v-if="auth.isHeadNurse" size="small" type="primary" @click="goManage">排班管理</el-button>
+          <div class="card-actions">
+            <el-checkbox v-model="showHistory">显示历史排班</el-checkbox>
+            <el-button v-if="auth.isHeadNurse" size="small" type="primary" @click="goManage">排班管理</el-button>
+          </div>
         </div>
       </template>
       <el-table :data="schedules" v-loading="loading" empty-text="暂无排班数据">
-        <el-table-column prop="schedule_id" label="排班编号" width="120" />
+        <el-table-column prop="ward_id" label="病房号" width="120" />
         <el-table-column prop="ward_type" label="病房类型" width="160" />
         <el-table-column prop="start_time" label="值班时间">
           <template #default="scope">
@@ -105,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import dayjs from "dayjs";
 import { fetchMySchedules, fetchTodayTasks, completeTask, type NurseScheduleItem, type TodayTaskItem } from "../../api/modules/nurse";
@@ -114,6 +117,7 @@ import { ElMessage } from "element-plus";
 import { addIgnoredExpiredTaskId, loadIgnoredExpiredTaskIds } from "../../utils/ignoredTasks";
 
 const schedules = ref<NurseScheduleItem[]>([]);
+const showHistory = ref(false);
 const loading = ref(false);
 const taskLoading = ref(false);
 const todayTasks = ref<TodayTaskItem[]>([]);
@@ -134,7 +138,7 @@ function statusRank(status: string) {
 }
 
 function formatRange(start: string, end: string) {
-  return `${dayjs(start).format("YYYY-MM-DD HH:mm")} ~ ${dayjs(end).format("HH:mm")}`;
+  return `${dayjs(start).format("YYYY-MM-DD HH:mm")} ~ ${dayjs(end).format("YYYY-MM-DD HH:mm")}`;
 }
 
 function formatTime(val: string) {
@@ -144,7 +148,7 @@ function formatTime(val: string) {
 async function loadSchedules() {
   loading.value = true;
   try {
-    const { data } = await fetchMySchedules();
+    const { data } = await fetchMySchedules(showHistory.value);
     schedules.value = data;
   } finally {
     loading.value = false;
@@ -243,6 +247,10 @@ async function handleOverdue(taskId: number) {
 function goManage() {
   router.push("/workspace/nurse/schedule-management");
 }
+
+watch(showHistory, () => {
+  void loadSchedules();
+});
 
 onMounted(() => {
   void loadSchedules();

@@ -6,6 +6,7 @@ from sqlmodel import Field, SQLModel
 
 class ScheduleRead(SQLModel):
     schedule_id: int
+    ward_id: int
     nurse_name: str
     ward_type: str
     start_time: datetime
@@ -42,6 +43,7 @@ class WardOverviewItem(SQLModel):
     ward_id: int
     ward_type: str
     bed_count: int
+    occupied_count: int = 0
 
 
 class TodayTaskItem(SQLModel):
