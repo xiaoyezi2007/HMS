@@ -23,34 +23,36 @@
     </el-card>
 
     <el-card class="table-card">
-      <el-table :data="inpatients" stripe v-loading="loading">
-        <el-table-column label="患者姓名" min-width="130">
+      <el-table :data="inpatients" stripe v-loading="loading" class="inpatients-table" table-layout="fixed">
+        <el-table-column label="患者姓名" min-width="140">
           <template #default="scope">
             <div class="patient-name">{{ scope.row.patient_name }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="ward_id" label="病房号" width="90" />
-        <el-table-column prop="ward_type" label="病房类型" width="140" />
-        <el-table-column label="入院时间" min-width="200">
+        <el-table-column prop="ward_id" label="病房号" min-width="140" align="center" />
+        <el-table-column prop="ward_type" label="病房类型" min-width="140" align="center" />
+        <el-table-column label="入院时间" min-width="140" align="center">
           <template #default="scope">
             {{ formatDate(scope.row.in_date) }}
           </template>
         </el-table-column>
-        <el-table-column label="已住院" width="140">
+        <el-table-column label="已住院" min-width="140" align="center">
           <template #default="scope">
             {{ formatStay(scope.row.stay_hours) }}
           </template>
         </el-table-column>
-        <el-table-column label="历史病历" width="130">
+        <el-table-column label="历史病历" min-width="140" align="center">
           <template #default="scope">
-            <div class="hosp-ticket">
+            <div class="hosp-ticket cell-center">
               <el-button size="small" type="primary" link @click="openHospDetail(scope.row)">查看</el-button>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" min-width="140" align="center">
           <template #default="scope">
-            <el-button size="small" type="primary" link @click="openTaskDialog(scope.row)">添加护理任务</el-button>
+            <div class="cell-center">
+              <el-button size="small" type="primary" link @click="openTaskDialog(scope.row)">添加护理任务</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -860,9 +862,13 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.hosp-ticket {
+.cell-center {
   display: flex;
   align-items: center;
+  justify-content: center;
+}
+
+.hosp-ticket {
   gap: 6px;
 }
 
