@@ -22,7 +22,7 @@ const roleFallback: Record<string, string> = {
   医生: "/workspace/doctor",
   护士: "/workspace/nurse",
   药师: "/workspace/pharmacy",
-  管理员: "/workspace/admin"
+  管理员: "/workspace/admin/staff"
 };
 
 const router = createRouter({
@@ -149,11 +149,21 @@ const router = createRouter({
         },
         {
           path: "workspace/admin",
-          name: "admin",
-          component: AdminDashboard,
+          redirect: "/workspace/admin/staff",
           meta: { roles: ["管理员"] }
-        }
-        ,
+        },
+        {
+          path: "workspace/admin/staff",
+          name: "admin-staff",
+          component: AdminDashboard,
+          meta: { roles: ["管理员"], section: "staff" }
+        },
+        {
+          path: "workspace/admin/dept",
+          name: "admin-dept",
+          component: AdminDashboard,
+          meta: { roles: ["管理员"], section: "dept" }
+        },
         {
           path: "workspace/admin/revenue",
           name: "admin-revenue",

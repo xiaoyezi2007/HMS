@@ -6,337 +6,341 @@
       show-icon
     />
 
-    <el-card shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>新增科室</span>
-          <small>仅院长可操作，科室名称需唯一</small>
-        </div>
-      </template>
-      <el-form :model="deptForm" label-width="90px">
-        <el-row :gutter="12">
-          <el-col :xs="24" :sm="14" :md="10">
-            <el-form-item label="科室名称">
-              <el-input v-model="deptForm.dept_name" placeholder="如 心内科" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="10" :md="8">
-            <el-form-item label="电话">
-              <el-input v-model="deptForm.telephone" placeholder="可选" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="24" :md="6" class="form-actions">
-            <el-button type="primary" :loading="deptCreating" @click="handleCreateDepartment">新增科室</el-button>
-            <el-button @click="resetDeptForm">重置</el-button>
-          </el-col>
-        </el-row>
-      </el-form>
-    </el-card>
+    <template v-if="isDeptSection">
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <span>新增科室</span>
+            <small>仅院长可操作，科室名称需唯一</small>
+          </div>
+        </template>
+        <el-form :model="deptForm" label-width="90px">
+          <el-row :gutter="12">
+            <el-col :xs="24" :sm="14" :md="10">
+              <el-form-item label="科室名称">
+                <el-input v-model="deptForm.dept_name" placeholder="如 心内科" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="10" :md="8">
+              <el-form-item label="电话">
+                <el-input v-model="deptForm.telephone" placeholder="可选" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="24" :md="6" class="form-actions">
+              <el-button type="primary" :loading="deptCreating" @click="handleCreateDepartment">新增科室</el-button>
+              <el-button @click="resetDeptForm">重置</el-button>
+            </el-col>
+          </el-row>
+        </el-form>
+      </el-card>
 
-    <el-card shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>病房管理</span>
-          <small>房间号需手工录入（101-999），科室与病房类型决定床位数</small>
-        </div>
-      </template>
-      <el-form :model="wardForm" label-width="90px">
-        <el-row :gutter="12">
-          <el-col :xs="24" :sm="12" :md="6">
-            <el-form-item label="房间号">
-              <el-input-number
-                v-model="wardForm.ward_id"
-                :controls="false"
-                placeholder="101-999"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12" :md="8">
-            <el-form-item label="科室">
-              <el-select v-model="wardForm.dept_id" placeholder="选择所属科室" filterable :loading="deptLoading">
-                <el-option v-for="dept in departments" :key="dept.dept_id" :label="dept.dept_name" :value="dept.dept_id" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12" :md="6">
-            <el-form-item label="类型">
-              <el-select v-model="wardForm.type" placeholder="选择病房类型">
-                <el-option
-                  v-for="option in availableWardTypeOptions"
-                  :key="option.value"
-                  :label="`${option.label} · ${option.bedCount} 床`"
-                  :value="option.value"
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <span>病房管理</span>
+            <small>房间号需手工录入（101-999），科室与病房类型决定床位数</small>
+          </div>
+        </template>
+        <el-form :model="wardForm" label-width="90px">
+          <el-row :gutter="12">
+            <el-col :xs="24" :sm="12" :md="6">
+              <el-form-item label="房间号">
+                <el-input-number
+                  v-model="wardForm.ward_id"
+                  :controls="false"
+                  placeholder="101-999"
+                  style="width: 100%"
                 />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="24" :md="4" class="form-actions">
-            <el-button type="primary" :loading="wardCreating" @click="handleCreateWard">新增病房</el-button>
-            <el-button @click="resetWardForm">重置</el-button>
-          </el-col>
-        </el-row>
-      </el-form>
-      <div class="management-toolbar" style="margin-top: 12px">
-        <el-select
-          v-model="searchWardDept"
-          placeholder="选择科室筛选"
-          clearable
-          filterable
-          style="min-width: 180px"
-        >
-          <el-option v-for="dept in departments" :key="dept.dept_id" :label="dept.dept_name" :value="dept.dept_name" />
-        </el-select>
-        <el-select
-          v-model="searchWardType"
-          placeholder="选择病房类型"
-          clearable
-          style="min-width: 180px"
-        >
-          <el-option v-for="opt in wardTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-        </el-select>
-        <el-button type="primary" link :loading="wardLoading" @click="loadWards">刷新</el-button>
-      </div>
-      <el-table :data="visibleWards" v-loading="wardLoading" size="small" border>
-        <el-table-column prop="ward_id" label="房间号" width="100" />
-        <el-table-column prop="dept_name" label="科室" min-width="160" />
-        <el-table-column prop="type" label="病房类型" min-width="140" />
-        <el-table-column prop="bed_count" label="床位数" width="120" />
-        <el-table-column label="操作" width="120">
-          <template #default="scope">
-            <el-button type="danger" link @click="handleHideWard(scope.row.ward_id)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
-    <el-card shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>新增医护账号</span>
-          <small>手机号将作为登录名，初始密码固定为 123456</small>
-        </div>
-      </template>
-      <el-form :model="createForm" label-width="100px">
-        <el-form-item label="手机号">
-          <el-input v-model="createForm.phone" maxlength="11" placeholder="请输入 11 位手机号" />
-        </el-form-item>
-        <el-form-item label="用户名">
-          <el-input v-model="createForm.username" maxlength="20" placeholder="展示用昵称" />
-        </el-form-item>
-        <el-form-item label="角色">
-          <el-select v-model="createForm.role">
-            <el-option v-for="role in roleOptions" :key="role.value" :label="role.label" :value="role.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="isNurseRole" label="护士姓名">
-          <el-input v-model="createForm.nurse_name" maxlength="20" placeholder="请输入真实姓名" />
-        </el-form-item>
-        <el-form-item v-if="isNurseRole" label="性别">
-          <el-radio-group v-model="createForm.nurse_gender">
-            <el-radio-button v-for="item in genderOptions" :key="item.value" :label="item.value">
-              {{ item.label }}
-            </el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="isDoctorRole" label="医生姓名">
-          <el-input v-model="createForm.doctor_name" maxlength="20" placeholder="请输入真实姓名" />
-        </el-form-item>
-        <el-form-item v-if="isDoctorRole" label="性别">
-          <el-radio-group v-model="createForm.doctor_gender">
-            <el-radio-button v-for="item in genderOptions" :key="item.value" :label="item.value">
-              {{ item.label }}
-            </el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="isDoctorRole" label="医生级别">
-          <el-select v-model="createForm.doctor_title" placeholder="请选择医生级别">
-            <el-option v-for="option in doctorTitleOptions" :key="option" :label="option" :value="option" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="isDoctorRole" label="所属科室">
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="8">
+              <el-form-item label="科室">
+                <el-select v-model="wardForm.dept_id" placeholder="选择所属科室" filterable :loading="deptLoading">
+                  <el-option v-for="dept in departments" :key="dept.dept_id" :label="dept.dept_name" :value="dept.dept_id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="6">
+              <el-form-item label="类型">
+                <el-select v-model="wardForm.type" placeholder="选择病房类型">
+                  <el-option
+                    v-for="option in availableWardTypeOptions"
+                    :key="option.value"
+                    :label="`${option.label} · ${option.bedCount} 床`"
+                    :value="option.value"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="24" :md="4" class="form-actions">
+              <el-button type="primary" :loading="wardCreating" @click="handleCreateWard">新增病房</el-button>
+              <el-button @click="resetWardForm">重置</el-button>
+            </el-col>
+          </el-row>
+        </el-form>
+        <div class="management-toolbar" style="margin-top: 12px">
           <el-select
-            v-model="createForm.dept_id"
-            placeholder="请选择科室"
+            v-model="searchWardDept"
+            placeholder="选择科室筛选"
+            clearable
             filterable
-            :loading="deptLoading"
+            style="min-width: 180px"
           >
-            <el-option
-              v-for="dept in departments"
-              :key="dept.dept_id"
-              :label="dept.dept_name"
-              :value="dept.dept_id"
-            />
+            <el-option v-for="dept in departments" :key="dept.dept_id" :label="dept.dept_name" :value="dept.dept_name" />
           </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button
-            type="primary"
-            :loading="creating"
-            :disabled="submitDisabled"
-            @click="handleCreate"
+          <el-select
+            v-model="searchWardType"
+            placeholder="选择病房类型"
+            clearable
+            style="min-width: 180px"
           >
-            创建账号
-          </el-button>
-          <el-button @click="resetForm">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
-
-    <el-card shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>批量导入医护账号</span>
-          <small>下载模板后批量编辑，再上传 Excel/CSV 一键创建账号</small>
+            <el-option v-for="opt in wardTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+          <el-button type="primary" link :loading="wardLoading" @click="loadWards">刷新</el-button>
         </div>
-      </template>
-      <div class="import-card">
-        <div class="import-instructions">
-          <p>· 保留表头不变，手机号、用户名、角色为必填，医生需在“所属科室 ID”列填入数字，可参考模板中的“科室列表”，并补充姓名/性别/级别。</p>
-          <p>· 支持 .xlsx / .csv 文件。模板已包含示例，重复手机号会自动跳过。</p>
-        </div>
-        <div class="import-actions">
-          <el-button type="primary" plain :loading="templateLoading" @click="handleDownloadTemplate">
-            下载模板
-          </el-button>
-          <el-upload
-            ref="uploadRef"
-            class="upload-area"
-            drag
-            :auto-upload="false"
-            :file-list="uploadFiles"
-            accept=".xlsx,.csv"
-            @change="handleImportFileChange"
-            @remove="handleImportFileRemove"
-          >
-            <el-icon class="upload-icon"><UploadFilled /></el-icon>
-            <div class="el-upload__text">
-              将文件拖拽到此或<em>点击上传</em>
-            </div>
-            <template #tip>
-              <div class="upload-tip">建议直接在模板上编辑，单文件不超过 5MB</div>
+        <el-table :data="visibleWards" v-loading="wardLoading" size="small" border>
+          <el-table-column prop="ward_id" label="房间号" width="100" />
+          <el-table-column prop="dept_name" label="科室" min-width="160" />
+          <el-table-column prop="type" label="病房类型" min-width="140" />
+          <el-table-column prop="bed_count" label="床位数" width="120" />
+          <el-table-column label="操作" width="120">
+            <template #default="scope">
+              <el-button type="danger" link @click="handleHideWard(scope.row.ward_id)">删除</el-button>
             </template>
-          </el-upload>
-          <el-button type="success" :loading="importing" @click="handleImportSubmit">
-            执行导入
-          </el-button>
-        </div>
-      </div>
-      <el-alert
-        v-if="importSummary"
-        type="info"
-        show-icon
-        :closable="false"
-        class="import-summary"
-        :title="`共处理 ${importSummary.total_rows} 行，成功 ${importSummary.success_count} 条，失败 ${importSummary.errors.length} 条`"
-      />
-      <el-table
-        v-if="importSummary?.errors?.length"
-        :data="importSummary.errors"
-        size="small"
-        border
-        class="import-error-table"
-        empty-text="全部导入成功"
-      >
-        <el-table-column prop="row_number" label="行号" width="100" />
-        <el-table-column prop="message" label="失败原因" />
-      </el-table>
-    </el-card>
+          </el-table-column>
+        </el-table>
+      </el-card>
+    </template>
 
-    <el-card shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>医护账号管理</span>
-          <small>统一查看现有账号，并在表格中完成医生级别与护士长设置</small>
-        </div>
-      </template>
-      <div class="management-toolbar">
-        <el-select v-model="filterRole" placeholder="全部角色" clearable @change="handleFilterChange">
-          <el-option label="全部角色" value="" />
-          <el-option v-for="role in roleOptions" :key="role.value" :label="role.label" :value="role.value" />
-        </el-select>
-        <el-input v-model="searchName" placeholder="按姓名/昵称查询" clearable />
-        <el-input v-model="searchPhone" placeholder="按手机号查询" clearable maxlength="11" />
-        <el-checkbox v-model="onlyActive">仅查看在职员工</el-checkbox>
-        <el-button type="primary" link :loading="tableLoading" @click="refreshStaffData">刷新</el-button>
-      </div>
-      <el-table :data="pagedRows" v-loading="tableLoading" style="width: 100%">
-        <el-table-column prop="displayName" label="姓名" min-width="140" />
-        <el-table-column prop="phone" label="手机号" min-width="140" />
-        <el-table-column prop="role" label="角色" min-width="120" />
-        <el-table-column label="所属科室" min-width="120">
-          <template #default="scope">
-            {{ scope.row.doctorProfile?.dept_name || "-" }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" min-width="100">
-          <template #default="scope">
-            {{ scope.row.status || "-" }}
-          </template>
-        </el-table-column>
-        <el-table-column label="注册时间" min-width="180">
-          <template #default="scope">
-            {{ scope.row.register_time ? formatDate(scope.row.register_time) : "-" }}
-          </template>
-        </el-table-column>
-        <el-table-column label="医生级别" min-width="200">
-          <template #default="scope">
+    <template v-else>
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <span>新增医护账号</span>
+            <small>手机号将作为登录名，初始密码固定为 123456</small>
+          </div>
+        </template>
+        <el-form :model="createForm" label-width="100px">
+          <el-form-item label="手机号">
+            <el-input v-model="createForm.phone" maxlength="11" placeholder="请输入 11 位手机号" />
+          </el-form-item>
+          <el-form-item label="用户名">
+            <el-input v-model="createForm.username" maxlength="20" placeholder="展示用昵称" />
+          </el-form-item>
+          <el-form-item label="角色">
+            <el-select v-model="createForm.role">
+              <el-option v-for="role in roleOptions" :key="role.value" :label="role.label" :value="role.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="isNurseRole" label="护士姓名">
+            <el-input v-model="createForm.nurse_name" maxlength="20" placeholder="请输入真实姓名" />
+          </el-form-item>
+          <el-form-item v-if="isNurseRole" label="性别">
+            <el-radio-group v-model="createForm.nurse_gender">
+              <el-radio-button v-for="item in genderOptions" :key="item.value" :label="item.value">
+                {{ item.label }}
+              </el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="isDoctorRole" label="医生姓名">
+            <el-input v-model="createForm.doctor_name" maxlength="20" placeholder="请输入真实姓名" />
+          </el-form-item>
+          <el-form-item v-if="isDoctorRole" label="性别">
+            <el-radio-group v-model="createForm.doctor_gender">
+              <el-radio-button v-for="item in genderOptions" :key="item.value" :label="item.value">
+                {{ item.label }}
+              </el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="isDoctorRole" label="医生级别">
+            <el-select v-model="createForm.doctor_title" placeholder="请选择医生级别">
+              <el-option v-for="option in doctorTitleOptions" :key="option" :label="option" :value="option" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="isDoctorRole" label="所属科室">
             <el-select
-              v-if="scope.row.doctorProfile"
-              v-model="scope.row.doctorProfile.title"
-              size="small"
-              @change="(value) => handleDoctorTitleSelect(scope.row.doctorProfile?.doctor_id, value)"
+              v-model="createForm.dept_id"
+              placeholder="请选择科室"
+              filterable
+              :loading="deptLoading"
             >
               <el-option
-                v-for="option in doctorTitleOptions"
-                :key="option"
-                :label="option"
-                :value="option"
+                v-for="dept in departments"
+                :key="dept.dept_id"
+                :label="dept.dept_name"
+                :value="dept.dept_id"
               />
             </el-select>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="护士长" min-width="140">
-          <template #default="scope">
-            <el-switch
-              v-if="scope.row.nurseProfile"
-              :model-value="scope.row.nurseProfile.is_head_nurse"
-              inline-prompt
-              active-text="是"
-              inactive-text="否"
-              :loading="nurseLoading"
-              @change="(value) =>
-                handleNurseHeadToggle(scope.row.nurseProfile?.nurse_id, value)
-              "
-            />
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="140">
-          <template #default="scope">
+          </el-form-item>
+          <el-form-item>
             <el-button
-              type="danger"
-              link
-              :disabled="!scope.row.hasAccount"
-              @click="handleDelete(scope.row.phone)"
-            >删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div class="management-pagination">
-        <el-pagination
-          background
-          layout="total, sizes, prev, pager, next"
-          :current-page="currentPage"
-          :page-size="pageSize"
-          :page-sizes="pageSizeOptions"
-          :total="filteredRows.length"
-          @size-change="handlePageSizeChange"
-          @current-change="handlePageChange"
+              type="primary"
+              :loading="creating"
+              :disabled="submitDisabled"
+              @click="handleCreate"
+            >
+              创建账号
+            </el-button>
+            <el-button @click="resetForm">重置</el-button>
+          </el-form-item>
+        </el-form>
+      </el-card>
+
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <span>批量导入医护账号</span>
+            <small>下载模板后批量编辑，再上传 Excel/CSV 一键创建账号</small>
+          </div>
+        </template>
+        <div class="import-card">
+          <div class="import-instructions">
+            <p>· 保留表头不变，手机号、用户名、角色为必填，医生需在“所属科室 ID”列填入数字，可参考模板中的“科室列表”，并补充姓名/性别/级别。</p>
+            <p>· 支持 .xlsx / .csv 文件。模板已包含示例，重复手机号会自动跳过。</p>
+          </div>
+          <div class="import-actions">
+            <el-button type="primary" plain :loading="templateLoading" @click="handleDownloadTemplate">
+              下载模板
+            </el-button>
+            <el-upload
+              ref="uploadRef"
+              class="upload-area"
+              drag
+              :auto-upload="false"
+              :file-list="uploadFiles"
+              accept=".xlsx,.csv"
+              @change="handleImportFileChange"
+              @remove="handleImportFileRemove"
+            >
+              <el-icon class="upload-icon"><UploadFilled /></el-icon>
+              <div class="el-upload__text">
+                将文件拖拽到此或<em>点击上传</em>
+              </div>
+              <template #tip>
+                <div class="upload-tip">建议直接在模板上编辑，单文件不超过 5MB</div>
+              </template>
+            </el-upload>
+            <el-button type="success" :loading="importing" @click="handleImportSubmit">
+              执行导入
+            </el-button>
+          </div>
+        </div>
+        <el-alert
+          v-if="importSummary"
+          type="info"
+          show-icon
+          :closable="false"
+          class="import-summary"
+          :title="`共处理 ${importSummary.total_rows} 行，成功 ${importSummary.success_count} 条，失败 ${importSummary.errors.length} 条`"
         />
-      </div>
-    </el-card>
+        <el-table
+          v-if="importSummary?.errors?.length"
+          :data="importSummary.errors"
+          size="small"
+          border
+          class="import-error-table"
+          empty-text="全部导入成功"
+        >
+          <el-table-column prop="row_number" label="行号" width="100" />
+          <el-table-column prop="message" label="失败原因" />
+        </el-table>
+      </el-card>
+
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <span>医护账号管理</span>
+            <small>统一查看现有账号，并在表格中完成医生级别与护士长设置</small>
+          </div>
+        </template>
+        <div class="management-toolbar">
+          <el-select v-model="filterRole" placeholder="全部角色" clearable @change="handleFilterChange">
+            <el-option label="全部角色" value="" />
+            <el-option v-for="role in roleOptions" :key="role.value" :label="role.label" :value="role.value" />
+          </el-select>
+          <el-input v-model="searchName" placeholder="按姓名/昵称查询" clearable />
+          <el-input v-model="searchPhone" placeholder="按手机号查询" clearable maxlength="11" />
+          <el-checkbox v-model="onlyActive">仅查看在职员工</el-checkbox>
+          <el-button type="primary" link :loading="tableLoading" @click="refreshStaffData">刷新</el-button>
+        </div>
+        <el-table :data="pagedRows" v-loading="tableLoading" style="width: 100%">
+          <el-table-column prop="displayName" label="姓名" min-width="140" />
+          <el-table-column prop="phone" label="手机号" min-width="140" />
+          <el-table-column prop="role" label="角色" min-width="120" />
+          <el-table-column label="所属科室" min-width="120">
+            <template #default="scope">
+              {{ scope.row.doctorProfile?.dept_name || "-" }}
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" min-width="100">
+            <template #default="scope">
+              {{ scope.row.status || "-" }}
+            </template>
+          </el-table-column>
+          <el-table-column label="注册时间" min-width="180">
+            <template #default="scope">
+              {{ scope.row.register_time ? formatDate(scope.row.register_time) : "-" }}
+            </template>
+          </el-table-column>
+          <el-table-column label="医生级别" min-width="200">
+            <template #default="scope">
+              <el-select
+                v-if="scope.row.doctorProfile"
+                v-model="scope.row.doctorProfile.title"
+                size="small"
+                @change="(value) => handleDoctorTitleSelect(scope.row.doctorProfile?.doctor_id, value)"
+              >
+                <el-option
+                  v-for="option in doctorTitleOptions"
+                  :key="option"
+                  :label="option"
+                  :value="option"
+                />
+              </el-select>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="护士长" min-width="140">
+            <template #default="scope">
+              <el-switch
+                v-if="scope.row.nurseProfile"
+                :model-value="scope.row.nurseProfile.is_head_nurse"
+                inline-prompt
+                active-text="是"
+                inactive-text="否"
+                :loading="nurseLoading"
+                @change="(value) =>
+                  handleNurseHeadToggle(scope.row.nurseProfile?.nurse_id, value)
+                "
+              />
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="140">
+            <template #default="scope">
+              <el-button
+                type="danger"
+                link
+                :disabled="!scope.row.hasAccount"
+                @click="handleDelete(scope.row.phone)"
+              >删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="management-pagination">
+          <el-pagination
+            background
+            layout="total, sizes, prev, pager, next"
+            :current-page="currentPage"
+            :page-size="pageSize"
+            :page-sizes="pageSizeOptions"
+            :total="filteredRows.length"
+            @size-change="handlePageSizeChange"
+            @current-change="handlePageChange"
+          />
+        </div>
+      </el-card>
+    </template>
   </div>
 </template>
 
@@ -345,6 +349,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { UploadFilled } from "@element-plus/icons-vue";
 import type { UploadInstance, UploadProps, UploadUserFile } from "element-plus";
+import { useRoute } from "vue-router";
 import {
   createStaffAccount,
   deleteStaffAccount,
@@ -381,6 +386,9 @@ const genderOptions = [
   { label: "男", value: "男" },
   { label: "女", value: "女" }
 ];
+
+const route = useRoute();
+const isDeptSection = computed(() => route.meta?.section === "dept");
 
 const ICU_TYPE_VALUE = "重症监护";
 const wardTypeOptions = [

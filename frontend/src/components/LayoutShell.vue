@@ -84,7 +84,7 @@ const auth = useAuthStore();
 const notice = useNotificationStore();
 
 const menuConfig: MenuItem[] = [
-  { path: "/workspace/overview", label: "系统总览", roles: ["医生", "护士", "管理员"], icon: House },
+  { path: "/workspace/overview", label: "首页", roles: ["医生", "护士", "管理员"], icon: House },
   { path: "/workspace/patient/home", label: "首页", roles: ["患者"], icon: House },
   { path: "/workspace/patient/registrations", label: "我的挂号", roles: ["患者"], icon: Tickets },
   { path: "/workspace/patient/payments", label: "缴费查询", roles: ["患者"], icon: CreditCard },
@@ -98,7 +98,8 @@ const menuConfig: MenuItem[] = [
   { path: "/workspace/nurse/profile", label: "个人主页", roles: ["护士"], icon: User },
   { path: "/workspace/pharmacy", label: "库存管理", roles: ["药师"], icon: List },
   { path: "/workspace/pharmacy/profile", label: "个人主页", roles: ["药师"], icon: User },
-  { path: "/workspace/admin", label: "管理驾驶舱", roles: ["管理员"], icon: Management },
+  { path: "/workspace/admin/staff", label: "医护管理", roles: ["管理员"], icon: Management },
+  { path: "/workspace/admin/dept", label: "科室管理", roles: ["管理员"], icon: Document },
   { path: "/workspace/admin/revenue", label: "营收记录", roles: ["管理员"], icon: Coin },
   { path: "/workspace/admin/profile", label: "个人主页", roles: ["管理员"], icon: User }
 ];

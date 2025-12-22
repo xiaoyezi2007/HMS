@@ -125,6 +125,26 @@
         </div>
       </div>
     </template>
+    <template v-else-if="isAdminRole">
+      <div class="admin-overview">
+        <div class="title-block">
+          <div>
+            <h2>首页</h2>
+          </div>
+        </div>
+        <el-row :gutter="16">
+          <el-col v-for="item in adminShortcuts" :key="item.title" :lg="12" :md="12" :sm="12" :xs="24">
+            <el-card shadow="hover" class="admin-card" @click="item.onClick()">
+              <div class="admin-card__icon" :style="{ background: item.color }">
+                <component :is="item.icon" />
+              </div>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.desc }}</p>
+            </el-card>
+          </el-col>
+        </el-row>
+      </div>
+    </template>
     <template v-else>
       <el-page-header content="多角色联合工作台" icon="">
         <template #title>
@@ -138,7 +158,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import dayjs from "dayjs";
-import { Reading, UserFilled, Suitcase, Histogram } from "@element-plus/icons-vue";
+import { Reading, UserFilled, Suitcase, Histogram, Management, OfficeBuilding, Coin } from "@element-plus/icons-vue";
 import { useAuthStore } from "../../stores/auth";
 import { fetchWardOverview, fetchWardRecords, fetchWardTasks, type WardOverviewItem, type WardRecordItem, type WardTaskItem } from "../../api/modules/nurse";
 import { useRouter } from "vue-router";
@@ -146,6 +166,7 @@ import { useRouter } from "vue-router";
 const auth = useAuthStore();
 const isNurseRole = computed(() => auth.currentRole === "护士");
 const isDoctorRole = computed(() => auth.currentRole === "医生");
+const isAdminRole = computed(() => auth.currentRole === "管理员");
 const wards = ref<WardOverviewItem[]>([]);
 const wardFlags = ref<Record<number, { hasPatient: boolean; dueSoon: boolean }>>({});
 const isLoading = ref(false);
@@ -195,6 +216,37 @@ const doctorShortcuts = [
     desc: "查看在院患者，管理医嘱与任务",
     icon: Reading,
     onClick: () => router.push("/workspace/doctor/inpatients")
+  }
+];
+
+const adminShortcuts = [
+  {
+    title: "医护管理",
+    desc: "新增、导入并管理医护账号",
+    icon: Management,
+    color: "#eef2ff",
+    onClick: () => router.push("/workspace/admin/staff")
+  },
+  {
+    title: "科室管理",
+    desc: "新增科室与病房设置",
+    icon: OfficeBuilding,
+    color: "#e0f2fe",
+    onClick: () => router.push("/workspace/admin/dept")
+  },
+  {
+    title: "营收记录",
+    desc: "查看结算与费用流转",
+    icon: Coin,
+    color: "#fef3c7",
+    onClick: () => router.push("/workspace/admin/revenue")
+  },
+  {
+    title: "个人主页",
+    desc: "查看账号信息与密码",
+    icon: UserFilled,
+    color: "#e2e8f0",
+    onClick: () => router.push("/workspace/admin/profile")
   }
 ];
 
@@ -566,5 +618,40 @@ onMounted(() => {
   margin: 0;
   color: #475569;
   line-height: 1.6;
+}
+
+.admin-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-card {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  min-height: 160px;
+}
+
+.admin-card:hover {
+  transform: translateY(-4px);
+}
+
+.admin-card__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.admin-card__icon :deep(svg) {
+  width: 24px;
+  height: 24px;
+}
+
+.admin-card h3 {
+  margin: 0 0 8px;
 }
 </style>

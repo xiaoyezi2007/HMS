@@ -21,8 +21,8 @@
 ## 3. 后端运行指令
 
 ```powershell
-pip install -r requirements.txt        # 首次需要
-uvicorn app.main:app --reload          # 默认绑定 http://127.0.0.1:8001
+pip install -r requirements.txt               # 首次需要
+uvicorn app.main:app --reload --port 8001     # 默认绑定 http://127.0.0.1:8001
 ```
 
 - `init_db()` 会在启动时自动建表 + 注入默认院长账户（手机号 `19999999999`，密码 `Director@123`）。

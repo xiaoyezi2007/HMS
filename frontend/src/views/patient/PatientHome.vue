@@ -1,5 +1,6 @@
 <template>
   <div class="patient-home">
+    <h2 class="page-title">首页</h2>
     <el-row :gutter="16">
       <el-col v-for="card in cards" :key="card.path" :lg="12" :md="12" :sm="12" :xs="24">
         <el-card shadow="hover" class="card" @click="go(card.path)">
@@ -35,6 +36,10 @@ function go(path: string) {
 <style scoped>
 .patient-home {
   padding: 16px 0;
+}
+
+.page-title {
+  margin: 0 0 16px;
 }
 
 .card {
