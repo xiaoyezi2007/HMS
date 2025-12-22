@@ -257,6 +257,7 @@
         </el-select>
         <el-input v-model="searchName" placeholder="按姓名/昵称查询" clearable />
         <el-input v-model="searchPhone" placeholder="按手机号查询" clearable maxlength="11" />
+        <el-checkbox v-model="onlyActive">仅查看在职员工</el-checkbox>
         <el-button type="primary" link :loading="tableLoading" @click="refreshStaffData">刷新</el-button>
       </div>
       <el-table :data="pagedRows" v-loading="tableLoading" style="width: 100%">
@@ -414,6 +415,7 @@ const creating = ref(false);
 const listLoading = ref(false);
 const accountList = ref<StaffAccount[]>([]);
 const filterRole = ref<string>("");
+const onlyActive = ref(true);
 const doctorList = ref<DoctorProfile[]>([]);
 const doctorLoading = ref(false);
 const nurseList = ref<NurseProfile[]>([]);
@@ -566,7 +568,10 @@ const filteredRows = computed<ManagementRow[]>(() => {
     const matchesPhone = phoneKeyword ? row.phone.includes(phoneKeyword) : true;
     const displayName = row.displayName.toLowerCase();
     const matchesName = nameKeyword ? displayName.includes(nameKeyword) : true;
-    return matchesRole && matchesPhone && matchesName;
+    const matchesActive = onlyActive.value
+      ? !row.status || row.status === "启用" || row.status === "active"
+      : true;
+    return matchesRole && matchesPhone && matchesName && matchesActive;
   });
 });
 
@@ -578,7 +583,7 @@ const pagedRows = computed<ManagementRow[]>(() => {
 
 const tableLoading = computed(() => listLoading.value || doctorLoading.value || nurseLoading.value);
 
-watch([filterRole, searchName, searchPhone], () => {
+watch([filterRole, searchName, searchPhone, onlyActive], () => {
   currentPage.value = 1;
 });
 

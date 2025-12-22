@@ -33,7 +33,8 @@ def _build_inventory_view(
     usage_30d = int(usage_map.get(med.medicine_id, 0) or 0)
     avg_daily = usage_30d / USAGE_WINDOW_DAYS if usage_30d else 0.0
     expected_week_usage = math.ceil(avg_daily * PLANNING_HORIZON_DAYS)
-    suggested_restock = max(expected_week_usage - med.stock, 0)
+    target_stock = max(expected_week_usage, 50)
+    suggested_restock = max(target_stock - med.stock, 0)
     usage_trend = trend_map.get(med.medicine_id)
     if not usage_trend:
         usage_trend = [{"date": label, "quantity": 0} for label in date_labels]

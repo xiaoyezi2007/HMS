@@ -27,7 +27,9 @@
           </div>
         </el-col>
       </el-row>
-      <el-divider />
+      <div class="divider-spacer">
+        <el-divider class="summary-divider" />
+      </div>
       <div class="chart-section">
         <div class="chart-head">
           <div>
@@ -274,6 +276,15 @@ onUnmounted(() => {
   margin-bottom: 8px;
 }
 
+.summary-divider {
+  margin: 16px 0 18px;
+}
+
+.divider-spacer {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 .metric {
   background: #f8fafc;
   border-radius: 12px;
@@ -304,6 +315,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  margin-top: 14px;
+  padding-top: 6px;
 }
 
 .chart-head .chart-title {
@@ -314,13 +327,14 @@ onUnmounted(() => {
 .chart-wrapper {
   width: 100%;
   height: 320px;
+  margin-top: 10px;
 }
 
 .type-breakdown {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
-  margin-top: 8px;
+  margin-top: 16px;
 }
 
 .type-item {
