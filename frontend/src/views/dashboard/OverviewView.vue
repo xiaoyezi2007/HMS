@@ -10,17 +10,28 @@
       </div>
       <el-empty v-if="!isLoading && wards.length === 0" description="暂无病房数据" />
       <div v-else class="ward-grid">
-        <div v-for="ward in wards" :key="ward.ward_id" class="ward-card" @click="handleWardClick(ward)">
+        <div
+          v-for="ward in wards"
+          :key="ward.ward_id"
+          class="ward-card"
+          :class="wardCardClass(ward)"
+          @click="handleWardClick(ward)"
+        >
           <div class="ward-card__header">
             <div class="ward-badge">病房 {{ ward.ward_id }}</div>
             <span class="ward-type">{{ ward.ward_type }}</span>
           </div>
-          <div class="bed-list">
-            <div
-              v-for="bed in ward.bed_count"
-              :key="bed"
-              :class="['bed-slot', { occupied: bed <= ward.occupied_count }]"
-            >
+          <div class="ward-status">
+            <div class="ward-occupancy">
+              <strong>占用</strong>
+              <span>{{ ward.occupied_count }} / {{ ward.bed_count }}</span>
+            </div>
+            <el-tag v-if="isDueSoon(ward)" type="danger" size="small" effect="dark">2 小时内有任务</el-tag>
+            <el-tag v-else-if="hasPatient(ward)" type="success" size="small" effect="plain">有患者</el-tag>
+            <el-tag v-else type="info" size="small" effect="plain">空房</el-tag>
+          </div>
+          <div class="bed-list" :style="bedGridStyle(ward)">
+            <div v-for="bed in bedSlots(ward)" :key="bed" class="bed-slot">
               床 {{ bed }}
             </div>
           </div>
@@ -135,6 +146,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import dayjs from "dayjs";
 import { Reading, UserFilled, Suitcase, Histogram } from "@element-plus/icons-vue";
 import { useAuthStore } from "../../stores/auth";
 import { fetchWardOverview, fetchWardRecords, fetchWardTasks, type WardOverviewItem, type WardRecordItem, type WardTaskItem } from "../../api/modules/nurse";
@@ -142,6 +154,7 @@ import { fetchWardOverview, fetchWardRecords, fetchWardTasks, type WardOverviewI
 const auth = useAuthStore();
 const isNurseRole = computed(() => auth.currentRole === "护士");
 const wards = ref<WardOverviewItem[]>([]);
+const wardFlags = ref<Record<number, { hasPatient: boolean; dueSoon: boolean }>>({});
 const isLoading = ref(false);
 const recordVisible = ref(false);
 const recordLoading = ref(false);
@@ -182,9 +195,32 @@ async function loadWardOverview() {
   try {
     const { data } = await fetchWardOverview();
     wards.value = data;
+    await loadWardAlerts(data);
   } finally {
     isLoading.value = false;
   }
+}
+
+async function loadWardAlerts(list: WardOverviewItem[]) {
+  const now = dayjs();
+  const tasksPromises = list.map(async (ward) => {
+    const hasPatient = (ward.occupied_count ?? 0) > 0;
+    let dueSoon = false;
+    if (hasPatient) {
+      try {
+        const res = await fetchWardTasks(ward.ward_id);
+        dueSoon = res.data.some((t) => {
+          if (t.status !== "未完成") return false;
+          const diff = dayjs(t.time).diff(now, "minute");
+          return diff >= 0 && diff <= 120;
+        });
+      } catch (e) {
+        // ignore fetch errors to avoid blocking overview
+      }
+    }
+    wardFlags.value[ward.ward_id] = { hasPatient, dueSoon };
+  });
+  await Promise.all(tasksPromises);
 }
 
 const activeWardTitle = computed(() => {
@@ -194,6 +230,36 @@ const activeWardTitle = computed(() => {
 
 function formatDate(val: string) {
   return new Date(val).toLocaleString();
+}
+
+function bedSlots(ward: WardOverviewItem) {
+  const count = Number(ward.bed_count) || 0;
+  return Array.from({ length: count }, (_, idx) => idx + 1);
+}
+
+function bedGridStyle(ward: WardOverviewItem) {
+  const count = Number(ward.bed_count) || 0;
+  // 四人房固定两列，避免 1-3 分行
+  if (count === 4) {
+    return { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" };
+  }
+  return {};
+}
+
+function hasPatient(ward: WardOverviewItem) {
+  return (ward.occupied_count ?? 0) > 0;
+}
+
+function isDueSoon(ward: WardOverviewItem) {
+  const flags = wardFlags.value[ward.ward_id];
+  return Boolean(flags?.dueSoon);
+}
+
+function wardCardClass(ward: WardOverviewItem) {
+  const flags = wardFlags.value[ward.ward_id];
+  if (flags?.dueSoon) return "ward-due-soon";
+  if (flags?.hasPatient) return "ward-has-patient";
+  return "";
 }
 
 async function handleWardClick(ward: WardOverviewItem) {
@@ -258,12 +324,12 @@ onMounted(() => {
 
 .ward-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 35px;
-  align-items: start;
-  justify-items: center;
-  grid-auto-rows: 190px;
-  max-width: 1050px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 28px;
+  align-items: stretch;
+  justify-items: stretch;
+  grid-auto-rows: 1fr;
+  max-width: 1100px;
   margin: 0 auto;
 }
 
@@ -274,14 +340,24 @@ onMounted(() => {
   background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
   width: 100%;
-  max-width: 220px;
-  height: 190px;
+  min-height: 230px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   overflow: hidden;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ward-card.ward-has-patient {
+  border-color: #16a34a;
+  background: linear-gradient(180deg, #ecfdf3 0%, #dcfce7 100%);
+}
+
+.ward-card.ward-due-soon {
+  border-color: #dc2626;
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe2e5 100%);
+  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.16);
 }
 
 .ward-card:hover {
@@ -310,25 +386,42 @@ onMounted(() => {
   font-size: 13px;
 }
 
+.ward-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+}
+
+.ward-occupancy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #0f172a;
+}
+
 .bed-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+  gap: 8px;
   flex: 1;
-  overflow-y: auto;
   padding-bottom: 4px;
 }
 
 .bed-slot {
   border: 1px solid #cbd5e1;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: #fff;
   text-align: center;
   font-size: 13px;
   color: #0f172a;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
-  min-height: 38px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
