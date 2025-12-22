@@ -50,7 +50,8 @@
         row-key="ward_id"
         :row-class-name="wardRowClass"
       >
-        <el-table-column prop="type" label="病房" />
+        <el-table-column prop="ward_id" label="病房号" width="100" />
+        <el-table-column prop="type" label="病房类型" />
         <el-table-column prop="bed_count" label="床位" width="100" />
         <el-table-column prop="occupied" label="已入住" width="100" />
         <el-table-column prop="available" label="可用" width="90" />
