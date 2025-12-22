@@ -48,7 +48,7 @@
               </div>
             </el-popover>
 
-            <el-tag type="success" effect="dark">{{ auth.currentRole || "未分配角色" }}</el-tag>
+            <el-tag type="success" effect="dark">{{ displayRole }}</el-tag>
             <el-divider direction="vertical" />
             <span class="phone">{{ auth.phone || "未绑定手机号" }}</span>
             <el-button type="danger" link @click="onLogout">退出登录</el-button>
@@ -82,6 +82,11 @@ const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
 const notice = useNotificationStore();
+
+const displayRole = computed(() => {
+  if (!auth.currentRole) return "未分配角色";
+  return auth.currentRole === "管理员" ? "院长" : auth.currentRole;
+});
 
 const menuConfig: MenuItem[] = [
   { path: "/workspace/overview", label: "首页", roles: ["医生", "护士", "管理员"], icon: House },

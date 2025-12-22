@@ -38,6 +38,51 @@
         </div>
       </div>
 
+      <el-card v-if="auth.isHeadNurse" class="inpatient-card">
+        <template #header>
+          <div class="card-header">
+            <div>
+              <span>住院患者</span>
+              <small>护士长可直接办理出院并生成费用</small>
+            </div>
+            <el-button type="primary" link @click="loadInpatients">刷新列表</el-button>
+          </div>
+        </template>
+        <el-table
+          class="inpatient-table"
+          :data="inpatients"
+          v-loading="inpatientsLoading"
+          empty-text="当前无住院患者"
+          border
+          style="width: 100%"
+        >
+          <el-table-column prop="patient_name" label="患者姓名" min-width="140" />
+          <el-table-column prop="ward_type" label="所在病房" min-width="140" />
+          <el-table-column label="入院时间" min-width="180">
+            <template #default="{ row }">
+              {{ formatDate(row.in_date) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="已住院时长" min-width="160">
+            <template #default="{ row }">
+              {{ formatStayDuration(row.stay_hours) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="130">
+            <template #default="{ row }">
+              <el-button
+                type="success"
+                size="small"
+                :loading="dischargeLoadingId === row.hosp_id"
+                @click="handleDischarge(row)"
+              >
+                办理出院
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+
       <el-drawer v-model="recordVisible" :title="activeWardTitle" size="40%" direction="rtl">
         <template #title>
           <div class="drawer-title">
@@ -53,10 +98,8 @@
           <el-card v-for="item in wardRecords" :key="item.record_id" shadow="hover" class="record-card">
             <div class="record-card__header">
               <div class="record-patient">{{ item.patient_name }}</div>
-              <el-tag size="small" type="primary">病历 {{ item.record_id }}</el-tag>
             </div>
             <div class="record-meta">
-              <span>住院号：{{ item.hosp_id }}</span>
               <span>入院时间：{{ formatDate(item.in_date) }}</span>
             </div>
             <div class="record-field"><strong>主诉：</strong>{{ item.complaint }}</div>
@@ -144,30 +187,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, h } from "vue";
+import { computed, onMounted, ref } from "vue";
 import dayjs from "dayjs";
 import { Reading, UserFilled, Suitcase, Histogram, Management, OfficeBuilding, Coin } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { useAuthStore } from "../../stores/auth";
-import { fetchWardOverview, fetchWardRecords, fetchWardTasks, type WardOverviewItem, type WardRecordItem, type WardTaskItem } from "../../api/modules/nurse";
+import {
+  fetchWardOverview,
+  fetchWardRecords,
+  fetchWardTasks,
+  fetchHeadInpatients,
+  dischargeInpatient,
+  type WardOverviewItem,
+  type WardRecordItem,
+  type WardTaskItem,
+  type InpatientItem
+} from "../../api/modules/nurse";
 import { useRouter } from "vue-router";
 
 const auth = useAuthStore();
 const isNurseRole = computed(() => auth.currentRole === "护士");
 const isDoctorRole = computed(() => auth.currentRole === "医生");
 const isAdminRole = computed(() => auth.currentRole === "管理员");
-const BedIcon = {
-  name: "BedIcon",
-  render() {
-    return h(
-      "svg",
-      { viewBox: "0 0 24 24", width: "1em", height: "1em", fill: "currentColor" },
-      [
-        h("rect", { x: "3", y: "5", width: "6", height: "6", rx: "1" }),
-        h("path", { d: "M3 13.5h18a1 1 0 0 1 1 1V19h-2v-3h-6v3h-2v-3H5v3H3z" })
-      ]
-    );
-  }
-};
 const wards = ref<WardOverviewItem[]>([]);
 const wardFlags = ref<Record<number, { hasPatient: boolean; dueSoon: boolean }>>({});
 const isLoading = ref(false);
@@ -176,6 +217,9 @@ const recordLoading = ref(false);
 const wardRecords = ref<WardRecordItem[]>([]);
 const wardTasks = ref<WardTaskItem[]>([]);
 const activeWard = ref<WardOverviewItem | null>(null);
+const inpatients = ref<InpatientItem[]>([]);
+const inpatientsLoading = ref(false);
+const dischargeLoadingId = ref<number | null>(null);
 const router = useRouter();
 
 const featureCards = [
@@ -216,7 +260,7 @@ const doctorShortcuts = [
   {
     title: "住院管理",
     desc: "查看在院患者，管理医嘱与任务",
-    icon: BedIcon,
+    icon: Reading,
     color: "#e2e8f0",
     onClick: () => router.push("/workspace/doctor/inpatients")
   }
@@ -265,6 +309,19 @@ async function loadWardOverview() {
   }
 }
 
+async function loadInpatients() {
+  if (!auth.isHeadNurse) return;
+  inpatientsLoading.value = true;
+  try {
+    const { data } = await fetchHeadInpatients();
+    inpatients.value = data;
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail ?? "加载住院患者失败");
+  } finally {
+    inpatientsLoading.value = false;
+  }
+}
+
 async function loadWardAlerts(list: WardOverviewItem[]) {
   const now = dayjs();
   const tasksPromises = list.map(async (ward) => {
@@ -294,6 +351,12 @@ const activeWardTitle = computed(() => {
 
 function formatDate(val: string) {
   return new Date(val).toLocaleString();
+}
+
+function formatStayDuration(hours: number) {
+  if (hours < 24) return `${hours.toFixed(1)} 小时`;
+  const days = hours / 24;
+  return `${days.toFixed(1)} 天`;
 }
 
 function bedSlots(ward: WardOverviewItem) {
@@ -340,6 +403,29 @@ async function handleWardClick(ward: WardOverviewItem) {
   }
 }
 
+async function handleDischarge(row: InpatientItem) {
+  try {
+    await ElMessageBox.confirm(`确认为 ${row.patient_name} 办理出院并生成住院费用吗？`, "提示", {
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
+
+  dischargeLoadingId.value = row.hosp_id;
+  try {
+    const { data } = await dischargeInpatient(row.hosp_id);
+    ElMessage.success(`出院完成，住院费 ¥${data.bill_amount.toFixed(2)}`);
+    await loadInpatients();
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail ?? "出院失败");
+  } finally {
+    dischargeLoadingId.value = null;
+  }
+}
+
 function statusRank(status: string) {
   if (status === "未完成") return 0;
   if (status === "已过期") return 1;
@@ -365,6 +451,7 @@ function formatTaskStatus(status: string) {
 
 onMounted(() => {
   loadWardOverview();
+  loadInpatients();
 });
 </script>
 
@@ -500,6 +587,25 @@ onMounted(() => {
   background: #dcfce7;
   color: #166534;
   font-weight: 600;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-header small {
+  color: #94a3b8;
+}
+
+.inpatient-card .el-table {
+  font-size: 14px;
+}
+
+.inpatient-table .el-button {
+  width: 100%;
 }
 
 .drawer-title {

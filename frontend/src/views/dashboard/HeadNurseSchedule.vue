@@ -95,49 +95,6 @@
       </el-table>
     </el-card>
 
-    <el-card class="inpatient-card">
-      <template #header>
-        <div class="card-header">
-          <div>
-            <span>住院患者</span>
-            <small>护士长可直接办理出院并生成费用</small>
-          </div>
-          <el-button type="primary" link @click="loadInpatients">刷新列表</el-button>
-        </div>
-      </template>
-      <el-table
-        class="inpatient-table"
-        :data="inpatients"
-        v-loading="inpatientsLoading"
-        empty-text="当前无住院患者"
-        border
-      >
-        <el-table-column prop="patient_name" label="患者姓名" width="160" />
-        <el-table-column prop="ward_type" label="所在病房" width="160" />
-        <el-table-column label="入院时间" width="220">
-          <template #default="{ row }">
-            {{ formatDateTime(row.in_date) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="已住院时长" width="200">
-          <template #default="{ row }">
-            {{ formatStayDuration(row.stay_hours) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="160">
-          <template #default="{ row }">
-            <el-button
-              type="success"
-              size="small"
-              :loading="dischargeLoadingId === row.hosp_id"
-              @click="handleDischarge(row)">
-              办理出院
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
     <el-dialog v-model="editVisible" :title="editFormTitle" width="520px">
       <el-form :model="editForm" label-width="100px">
         <el-form-item label="病房">
@@ -218,8 +175,6 @@ import {
   fetchHeadScheduleContext,
   upsertWardSchedule,
   autoArrangeSchedules,
-  fetchHeadInpatients,
-  dischargeInpatient,
   fetchTodayTasks,
   completeTask,
   type HeadScheduleContext,
@@ -227,7 +182,6 @@ import {
   type NurseOption,
   type ScheduleUpsertPayload,
   type AutoSchedulePayload,
-  type InpatientItem,
   type TodayTaskItem
 } from "../../api/modules/nurse";
 import { addIgnoredExpiredTaskId, loadIgnoredExpiredTaskIds } from "../../utils/ignoredTasks";
@@ -249,9 +203,6 @@ const autoLoading = ref(false);
 const editVisible = ref(false);
 const editSubmitting = ref(false);
 const deleteLoadingId = ref<string | null>(null);
-const inpatients = ref<InpatientItem[]>([]);
-const inpatientsLoading = ref(false);
-const dischargeLoadingId = ref<number | null>(null);
 const overdueVisible = ref(false);
 const overdueLoading = ref(false);
 const overdueTasks = ref<TodayTaskItem[]>([]);
@@ -388,18 +339,6 @@ async function loadContext() {
   }
 }
 
-async function loadInpatients() {
-  inpatientsLoading.value = true;
-  try {
-    const { data } = await fetchHeadInpatients();
-    inpatients.value = data;
-  } catch (err: any) {
-    ElMessage.error(err.response?.data?.detail ?? "加载住院患者失败");
-  } finally {
-    inpatientsLoading.value = false;
-  }
-}
-
 function initEditFormDefaults() {
   editForm.ward_id = context.wards[0]?.ward_id ?? null;
   const start = dayjs().minute(0).second(0).millisecond(0);
@@ -524,32 +463,8 @@ async function handleAutoSchedule() {
   }
 }
 
-async function handleDischarge(row: InpatientItem) {
-  try {
-    await ElMessageBox.confirm(`确认为 ${row.patient_name} 办理出院并生成住院费用吗？`, "提示", {
-      confirmButtonText: "确定",
-      cancelButtonText: "取消",
-      type: "warning"
-    });
-  } catch {
-    return;
-  }
-
-  dischargeLoadingId.value = row.hosp_id;
-  try {
-    const { data } = await dischargeInpatient(row.hosp_id);
-    ElMessage.success(`出院完成，住院费 ¥${data.bill_amount.toFixed(2)}`);
-    await loadInpatients();
-  } catch (err: any) {
-    ElMessage.error(err.response?.data?.detail ?? "出院失败");
-  } finally {
-    dischargeLoadingId.value = null;
-  }
-}
-
 onMounted(() => {
   loadContext();
-  loadInpatients();
 });
 </script>
 
@@ -603,14 +518,6 @@ onMounted(() => {
 
 .auto-card {
   border-left: 3px solid var(--el-color-primary);
-}
-
-.inpatient-card .el-table {
-  font-size: 14px;
-}
-
-.inpatient-table .el-button {
-  width: 100%;
 }
 
 .overdue-list {
