@@ -255,20 +255,6 @@ async def create_examination(
     session.add(new_exam)
     await session.commit()
     await session.refresh(new_exam)
-    # 创建对应的缴费（检查费），金额随机 50-200
-    amt = random.randint(50, 200)
-    # 避免重复创建：若已存在关联 exam_id 的 payment 则跳过
-    try:
-        pay_stmt = select(Payment).where(Payment.exam_id == new_exam.exam_id)
-        existing_pay = (await session.execute(pay_stmt)).scalars().first()
-    except Exception:
-        existing_pay = None
-
-    if not existing_pay:
-        pay = Payment(type=PaymentType.EXAM, amount=amt, patient_id=registration.patient_id, exam_id=new_exam.exam_id)
-        session.add(pay)
-        await session.commit()
-        await session.refresh(pay)
 
     return new_exam
 
@@ -779,23 +765,5 @@ async def finish_handling(
     session.add(registration)
     await session.commit()
     await session.refresh(registration)
-    # 挂号完成时，如果存在处方，则为处方生成缴费记录（处方费）
-    try:
-        rec = (await session.execute(select(MedicalRecord).where(MedicalRecord.reg_id == reg_id))).scalars().first()
-        if rec:
-            pres = (await session.execute(select(Prescription).where(Prescription.record_id == rec.record_id))).scalars().first()
-        else:
-            pres = None
-    except Exception:
-        pres = None
-
-    if pres and pres.total_amount and pres.total_amount > 0:
-        # 若已有与该处方关联的 payment 则跳过创建
-        pay_stmt = select(Payment).where(Payment.pres_id == pres.pres_id)
-        existing_pay = (await session.execute(pay_stmt)).scalars().first()
-        if not existing_pay:
-            pay = Payment(type=PaymentType.PRESCRIPTION, amount=pres.total_amount, patient_id=registration.patient_id, pres_id=pres.pres_id)
-            session.add(pay)
-            await session.commit()
 
     return registration
