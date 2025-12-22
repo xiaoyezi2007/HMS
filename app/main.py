@@ -73,14 +73,14 @@ async def init_triggers():
     FOR EACH ROW
     BEGIN
         IF OLD.status <> 'FINISHED' AND NEW.status = 'FINISHED' THEN
-            INSERT INTO payment(type, amount, status, patient_id, reg_id, pres_id, time)
-            SELECT 'PRESCRIPTION', pres.total_amount, '未缴费', NEW.patient_id, NEW.reg_id, pres.pres_id, NOW()
+            INSERT INTO payment(type, amount, patient_id, reg_id, pres_id, time)
+            SELECT 'PRESCRIPTION', pres.total_amount, NEW.patient_id, NEW.reg_id, pres.pres_id, NOW()
             FROM prescription pres
             JOIN medicalrecord mr ON mr.record_id = pres.record_id
             WHERE mr.reg_id = NEW.reg_id;
 
-            INSERT INTO payment(type, amount, status, patient_id, reg_id, exam_id, time)
-            SELECT 'EXAM', FLOOR(RAND() * 151) + 50, '未缴费', NEW.patient_id, NEW.reg_id, exam.exam_id, NOW()
+            INSERT INTO payment(type, amount, patient_id, reg_id, exam_id, time)
+            SELECT 'EXAM', FLOOR(RAND() * 151) + 50, NEW.patient_id, NEW.reg_id, exam.exam_id, NOW()
             FROM examination exam
             JOIN medicalrecord mr ON mr.record_id = exam.record_id
             WHERE mr.reg_id = NEW.reg_id;

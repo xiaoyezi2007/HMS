@@ -150,7 +150,6 @@ class Prescription(SQLModel, table=True):
     record_id: int = Field(foreign_key="medicalrecord.record_id", unique=True)
     create_time: datetime = Field(default_factory=datetime.now)
     total_amount: float = Field(default=0.0)
-    status: str = Field(default="未缴费")
     details: List["PrescriptionDetail"] = Relationship(back_populates="prescription")
 
 # --- 14. 处方明细 ---
