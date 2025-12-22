@@ -37,6 +37,29 @@
         </el-form-item>
       </el-form>
     </el-card>
+
+    <el-card shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <span>修改密码</span>
+          <small>更新账户登录密码</small>
+        </div>
+      </template>
+      <el-form :model="pwdForm" label-width="100px">
+        <el-form-item label="当前密码">
+          <el-input v-model="pwdForm.current_password" type="password" />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="pwdForm.new_password" type="password" />
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input v-model="pwdForm.confirm_password" type="password" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="pwdLoading" @click="submitPwd">修改密码</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
   </div>
 </template>
 
@@ -44,6 +67,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { createPatientProfile, fetchPatientProfile } from "../../api/modules/patient";
+import { changePassword } from "../../api/modules/auth";
 
 const profileForm = reactive({
   name: "",
@@ -56,6 +80,8 @@ const profileForm = reactive({
 const loadingProfile = ref(false);
 const submitLoading = ref(false);
 const hasProfile = ref(false);
+const pwdLoading = ref(false);
+const pwdForm = reactive({ current_password: "", new_password: "", confirm_password: "" });
 
 async function loadProfile() {
   loadingProfile.value = true;
@@ -102,6 +128,30 @@ async function submitProfile() {
 onMounted(() => {
   loadProfile();
 });
+
+async function submitPwd() {
+  if (!pwdForm.current_password || !pwdForm.new_password) {
+    ElMessage.warning("请填写完整密码信息");
+    return;
+  }
+  if (pwdForm.new_password !== pwdForm.confirm_password) {
+    ElMessage.warning("两次输入的新密码不一致");
+    return;
+  }
+  pwdLoading.value = true;
+  try {
+    await changePassword(pwdForm.current_password, pwdForm.new_password);
+    ElMessage.success("密码已修改，请重新登录");
+    window.localStorage.removeItem("hms-token");
+    window.localStorage.removeItem("hms-role");
+    window.localStorage.removeItem("hms-phone");
+    window.location.href = "/login";
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.detail ?? "修改失败");
+  } finally {
+    pwdLoading.value = false;
+  }
+}
 </script>
 
 <style scoped>
