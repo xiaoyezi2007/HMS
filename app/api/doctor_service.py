@@ -608,6 +608,27 @@ async def hospitalize_patient(
     if not record:
         raise HTTPException(status_code=404, detail="请先建立病历再办理住院")
 
+    # 严格保证单患者仅有一条“在院”住院单
+    active_stmt = (
+        select(Hospitalization, MedicalRecord, Registration)
+        .join(MedicalRecord, Hospitalization.record_id == MedicalRecord.record_id)
+        .join(Registration, MedicalRecord.reg_id == Registration.reg_id)
+        .where(Registration.patient_id == registration.patient_id)
+        .where(Hospitalization.status == "在院")
+    )
+    active_row = (await session.execute(active_stmt)).first()
+    if active_row:
+        active_hosp, active_record, active_reg = active_row
+        if active_reg.reg_id != registration.reg_id:
+            raise HTTPException(status_code=400, detail="该患者已有在院住院单，无法重复办理")
+        # 同一挂号更换病房：若尚未完成办理，删除旧住院单；否则标记出院再新建
+        if registration.status != RegStatus.FINISHED:
+            await session.delete(active_hosp)
+        else:
+            active_hosp.status = "已出院"
+            active_hosp.out_date = datetime.now()
+        await session.flush()
+
     ward = await session.get(Ward, payload.ward_id)
     if not ward or ward.dept_id != doctor.dept_id:
         raise HTTPException(status_code=400, detail="请选择当前科室的有效病房")

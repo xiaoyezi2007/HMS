@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from typing import List
@@ -14,6 +14,7 @@ from app.models.hospital import (
     Doctor,
     Registration,
     RegStatus,
+    RegType,
     MedicalRecord,
     PaymentType,
 )
@@ -254,13 +255,28 @@ async def create_registration(
     if active_reg_id:
         raise HTTPException(status_code=400, detail="您还有未完成的挂号，请在上一次挂号完成后再进行下一次挂号")
 
-    fee = 50.0 if reg_in.reg_type == "专家号" else 10.0
+    visit_date = getattr(reg_in, "visit_date", None) or datetime.now().date()
+
+    # 挂号限额：同一医生当日，专家号最多30个，普通号最多50个（不含已取消）
+    limit = 30 if reg_in.reg_type in (RegType.EXPERT, RegType.EXPERT.value, "专家号") else 50
+    quota_stmt = (
+        select(func.count())
+        .where(Registration.doctor_id == reg_in.doctor_id)
+        .where(Registration.visit_date == visit_date)
+        .where(Registration.reg_type == reg_in.reg_type)
+        .where(Registration.status != RegStatus.CANCELLED)
+    )
+    current_count = (await session.execute(quota_stmt)).scalar_one() or 0
+    if current_count >= limit:
+        raise HTTPException(status_code=400, detail="该医生当天挂号已满")
+
+    fee = 50.0 if reg_in.reg_type in (RegType.EXPERT, RegType.EXPERT.value, "专家号") else 10.0
 
     new_reg = Registration(
         patient_id=patient.patient_id,
         doctor_id=reg_in.doctor_id,
         reg_type=reg_in.reg_type,
-        visit_date=getattr(reg_in, 'visit_date', None) or datetime.now().date(),
+        visit_date=visit_date,
         fee=fee,
         status=RegStatus.WAITING
     )
