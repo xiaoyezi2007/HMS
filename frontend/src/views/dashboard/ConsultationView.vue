@@ -3,9 +3,9 @@
     <el-card>
       <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
         <div>
-          <h3>接诊 - 挂号 {{ regId }}</h3>
-          <div v-if="patient">
-            <small>患者：{{ patient.name }}</small>
+          <h4 style="margin:0; color: var(--el-text-color-secondary); font-weight:600;">接诊</h4>
+          <div v-if="patient" style="margin-top:6px; font-size:18px; font-weight:700; color:#1f2d3d;">
+            患者：{{ patient.name }}
           </div>
         </div>
         <div class="header-actions">
@@ -680,7 +680,7 @@ watch(historyRange, () => {
   cursor: pointer;
   transition: box-shadow .18s ease, transform .12s ease;
   border-radius: 8px;
-  min-height: 150px;
+  min-height: 130px;
 }
 .option-card:hover {
   box-shadow: 0 6px 14px rgba(13,27,42,0.10);
@@ -689,6 +689,9 @@ watch(historyRange, () => {
 .option-icon {
   font-size: 20px;
   color: var(--el-color-primary);
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
 }
 
 .option-row {
@@ -727,17 +730,23 @@ watch(historyRange, () => {
 
 .option-head {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 64px;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 72px;
+}
+.option-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: flex-start;
 }
 
 /* Align action button to card bottom/right */
 .action-row {
-  margin-top: 8px;
   display: flex;
   justify-content: flex-end;
   align-items: flex-end;
+  margin-top: auto; /* push buttons to the same baseline across cards */
 }
 
 .action-btn-yellow {

@@ -7,25 +7,25 @@
 
     <el-card class="mt-3">
       <el-table :data="schedule" stripe size="large">
-        <el-table-column prop="reg_id" label="挂号号" width="100" />
-        <el-table-column prop="reg_type" label="号别" width="100" />
-        <el-table-column label="患者" width="180">
+        <el-table-column label="患者" min-width="150" align="center">
           <template #default="scope">
-            <el-button type="text" @click.stop="openPatientDialog(scope.row.patient_id)">查看病人 {{ scope.row.patient_id }}</el-button>
+            <el-button type="text" @click.stop="openPatientDialog(scope.row.patient_id)">
+              {{ patientNames[scope.row.patient_id] || `患者 ${scope.row.patient_id}` }}
+            </el-button>
           </template>
         </el-table-column>
-        <el-table-column prop="fee" label="费用" width="90">
+        <el-table-column prop="reg_type" label="号别" min-width="150" align="center" />
+        <el-table-column prop="fee" label="费用" min-width="150" align="center">
           <template #default="scope">
             ￥{{ scope.row.fee.toFixed(2) }}
           </template>
         </el-table-column>
-        <el-table-column label="挂号时间" min-width="260">
+        <el-table-column label="就诊时间" min-width="150" align="center">
           <template #default="scope">
-            <span>{{ formatDateTimeText(scope.row.reg_date) }}</span>
-            <span style="margin-left: 10px; color: var(--el-text-color-secondary)">就诊：{{ formatDateText(scope.row.visit_date) }}</span>
+            <span>{{ formatDateText(scope.row.visit_date) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" min-width="150" align="center">
           <template #default="scope">
             <el-button v-if="scope.row.status === '排队中'" size="small" type="info" @click="onStart(scope.row)">开始办理</el-button>
             <el-button v-else-if="scope.row.status === '就诊中'" size="small" type="warning" @click="onStart(scope.row)">开始就诊</el-button>
@@ -70,6 +70,7 @@ const router = useRouter();
 const patientDialogVisible = ref(false);
 const patientLoading = ref(false);
 const patientDetail = ref<PatientProfileResponse | null>(null);
+const patientNames = ref<Record<number, string>>({});
 
 function formatDateTimeText(value?: unknown) {
   if (value === undefined || value === null) return "-";
@@ -84,6 +85,7 @@ function formatDateText(value?: unknown) {
 async function loadSchedule() {
   const { data } = await fetchDoctorSchedule();
   schedule.value = data;
+  await loadPatientNames(data);
 }
 
 // 书写病历入口已移至接诊页（ConsultationView）
@@ -119,6 +121,20 @@ async function openPatientDialog(patientId: number) {
   } finally {
     patientLoading.value = false;
   }
+}
+
+async function loadPatientNames(items: RegistrationItem[]) {
+  const ids = Array.from(new Set(items.map((i) => i.patient_id).filter(Boolean)));
+  const tasks = ids.map(async (id) => {
+    if (patientNames.value[id]) return;
+    try {
+      const { data } = await fetchPatientById(id);
+      patientNames.value = { ...patientNames.value, [id]: data.name };
+    } catch (err) {
+      // 忽略单个患者加载失败，保持表格可用
+    }
+  });
+  await Promise.allSettled(tasks);
 }
 </script>
 

@@ -24,19 +24,12 @@
 
     <el-card class="table-card">
       <el-table :data="inpatients" stripe v-loading="loading">
-        <el-table-column label="患者姓名" min-width="160">
+        <el-table-column label="患者姓名" min-width="130">
           <template #default="scope">
             <div class="patient-name">{{ scope.row.patient_name }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="ward_id" label="病房号" width="120" />
-        <el-table-column label="历史病历" width="130">
-          <template #default="scope">
-            <div class="hosp-ticket">
-              <el-button size="small" type="primary" link @click="openHospDetail(scope.row)">查看</el-button>
-            </div>
-          </template>
-        </el-table-column>
+        <el-table-column prop="ward_id" label="病房号" width="90" />
         <el-table-column prop="ward_type" label="病房类型" width="140" />
         <el-table-column label="入院时间" min-width="200">
           <template #default="scope">
@@ -46,6 +39,13 @@
         <el-table-column label="已住院" width="140">
           <template #default="scope">
             {{ formatStay(scope.row.stay_hours) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="历史病历" width="130">
+          <template #default="scope">
+            <div class="hosp-ticket">
+              <el-button size="small" type="primary" link @click="openHospDetail(scope.row)">查看</el-button>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="170" fixed="right">
