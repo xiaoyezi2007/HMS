@@ -4,7 +4,6 @@
       <template #header>
         <div class="card-header">
           <span>检查结果查询</span>
-          <small>未来将接入检查报告/影像等数据</small>
         </div>
       </template>
       <div>
@@ -55,9 +54,6 @@ onMounted(() => {
 <style scoped>
 .card-header {
   display: flex;
-  flex-direction: column;
-}
-.card-header small {
-  color: #94a3b8;
+  align-items: center;
 }
 </style>

@@ -32,7 +32,6 @@
               <span>今日待办</span>
               <el-tag type="info" effect="light" size="small">{{ todayTasks.length }} 条</el-tag>
               <el-tag v-if="overdueCount" type="danger" effect="dark" size="small">已过期 {{ overdueCount }} 条</el-tag>
-              <el-tag v-else-if="dueSoonCount" type="warning" effect="light" size="small">2小时内 {{ dueSoonCount }} 条</el-tag>
               <el-tag v-if="auth.isHeadNurse && pendingCount" type="warning" effect="plain" size="small">未完成 {{ pendingCount }} 条</el-tag>
             </div>
             <small v-if="auth.isHeadNurse">护士长可查看全部今日任务</small>
@@ -125,7 +124,6 @@ const overdueVisible = ref(false);
 const overdueLoading = ref(false);
 const overdueTasks = ref<TodayTaskItem[]>([]);
 const overdueHandleId = ref<number | null>(null);
-const dueSoonCount = computed(() => todayTasks.value.filter(t => t.status === "未完成" && dayjs(t.time).diff(dayjs(), "minute") <= 120 && dayjs(t.time).diff(dayjs(), "minute") >= 0).length);
 const overdueCount = computed(() => todayTasks.value.filter(t => t.status === "已过期").length);
 const pendingCount = computed(() => todayTasks.value.filter(t => t.status === "未完成").length);
 const router = useRouter();

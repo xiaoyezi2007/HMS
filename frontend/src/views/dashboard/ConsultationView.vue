@@ -441,7 +441,7 @@ async function submitRecord() {
   recordLoading.value = true;
   try {
     const { data } = await submitMedicalRecord(regId, { ...recordForm });
-    ElMessage.success(`病历提交成功，记录号 ${data.record_id}`);
+    ElMessage.success("病历提交成功");
     recordDialogVisible.value = false;
   } catch (err: any) {
     ElMessage.error(err.response?.data?.detail ?? "提交病历失败");

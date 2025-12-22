@@ -84,12 +84,12 @@ const auth = useAuthStore();
 const notice = useNotificationStore();
 
 const menuConfig: MenuItem[] = [
-  { path: "/workspace/overview", label: "系统总览", roles: ["医生", "护士", "药师", "管理员"], icon: House },
+  { path: "/workspace/overview", label: "系统总览", roles: ["医生", "护士", "管理员"], icon: House },
   { path: "/workspace/patient/home", label: "首页", roles: ["患者"], icon: House },
-  { path: "/workspace/patient/profile", label: "个人主页展示", roles: ["患者"], icon: User },
   { path: "/workspace/patient/registrations", label: "我的挂号", roles: ["患者"], icon: Tickets },
   { path: "/workspace/patient/payments", label: "缴费查询", roles: ["患者"], icon: CreditCard },
-  { path: "/workspace/patient/examinations", label: "检查结果查询", roles: ["患者"], icon: View },
+  { path: "/workspace/patient/examinations", label: "检查结果", roles: ["患者"], icon: View },
+  { path: "/workspace/patient/profile", label: "个人主页", roles: ["患者"], icon: User },
   { path: "/workspace/doctor", label: "就诊处理", roles: ["医生"], icon: FirstAidKit },
   { path: "/workspace/doctor/inpatients", label: "住院管理", roles: ["医生"], icon: Document },
   { path: "/workspace/doctor/profile", label: "个人主页", roles: ["医生"], icon: User },

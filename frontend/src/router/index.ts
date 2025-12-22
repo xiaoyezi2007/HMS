@@ -43,7 +43,7 @@ const router = createRouter({
           path: "workspace/overview",
           name: "overview",
           component: OverviewView,
-          meta: { roles: ["医生", "护士", "药师", "管理员"] }
+          meta: { roles: ["医生", "护士", "管理员"] }
         },
         {
           path: "workspace/patient",

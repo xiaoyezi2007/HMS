@@ -89,9 +89,14 @@
       </template>
       <el-form :model="createForm" label-width="90px">
         <el-row :gutter="16">
-          <el-col :xs="24" :sm="12" :md="8">
+          <el-col :xs="24" :sm="12" :md="6">
             <el-form-item label="名称">
               <el-input v-model="createForm.name" placeholder="如 布洛芬缓释胶囊" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6">
+            <el-form-item label="单价">
+              <el-input-number v-model="createForm.price" :min="0" :step="0.5" :precision="2" />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12" :md="6">
@@ -99,18 +104,13 @@
               <el-input v-model="createForm.unit" placeholder="盒/瓶/支" />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12" :md="5">
-            <el-form-item label="单价">
-              <el-input-number v-model="createForm.price" :min="0" :step="0.5" :precision="2" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12" :md="5">
+          <el-col :xs="24" :sm="12" :md="6">
             <el-form-item label="初始库存">
               <el-input-number v-model="createForm.stock" :min="0" :precision="0" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row :gutter="16" align="middle">
+        <el-row :gutter="16" class="form-actions-row" justify="end">
           <el-col :xs="24" :sm="12" :md="6" class="form-actions">
             <el-button type="primary" :loading="createLoading" @click="submitCreate">新增药品</el-button>
           </el-col>
@@ -125,9 +125,9 @@
           <small>补充库存，数量会自动累加到当前库存</small>
         </div>
       </template>
-      <el-form :model="purchaseForm" label-width="80px">
-        <el-row :gutter="16" align="middle">
-          <el-col :xs="24" :sm="12" :md="10">
+      <el-form :model="purchaseForm" label-width="90px">
+        <el-row :gutter="16" align="middle" class="form-actions-row">
+          <el-col :xs="24" :sm="12" :md="6">
             <el-form-item label="药品">
               <el-select v-model="purchaseForm.medicine_id" placeholder="请选择药品">
                 <el-option
@@ -139,12 +139,12 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12" :md="8">
+          <el-col :xs="24" :sm="12" :md="6">
             <el-form-item label="采购量">
               <el-input-number v-model="purchaseForm.quantity" :min="1" :precision="0" />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="24" :md="6" class="form-actions">
+          <el-col :xs="24" :sm="24" :md="6" :offset="6" class="form-actions">
             <el-button type="primary" :loading="purchaseLoading" @click="submitPurchase">立即采购</el-button>
           </el-col>
         </el-row>
@@ -436,6 +436,10 @@ onMounted(loadMedicines);
 .form-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.form-actions-row {
+  margin-top: 4px;
 }
 
 .usage-cell {
