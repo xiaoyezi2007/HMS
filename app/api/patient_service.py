@@ -495,7 +495,6 @@ async def get_registration_detail(
                 "pres_id": p.pres_id,
                 "create_time": p.create_time,
                 "total_amount": p.total_amount,
-                "status": p.status,
                 "details": enriched
             })
 
