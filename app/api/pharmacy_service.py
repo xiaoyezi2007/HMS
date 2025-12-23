@@ -29,6 +29,8 @@ def _build_inventory_view(
     usage_map: Dict[int, int],
     trend_map: Dict[int, List[Dict[str, int]]],
     date_labels: List[str],
+    monthly_trend_map: Dict[int, List[Dict[str, int]]],
+    month_labels: List[str],
 ) -> MedicineInventory:
     usage_30d = int(usage_map.get(med.medicine_id, 0) or 0)
     avg_daily = usage_30d / USAGE_WINDOW_DAYS if usage_30d else 0.0
@@ -38,6 +40,9 @@ def _build_inventory_view(
     usage_trend = trend_map.get(med.medicine_id)
     if not usage_trend:
         usage_trend = [{"date": label, "quantity": 0} for label in date_labels]
+    usage_monthly = monthly_trend_map.get(med.medicine_id)
+    if not usage_monthly:
+        usage_monthly = [{"date": label, "quantity": 0} for label in month_labels]
     return MedicineInventory(
         medicine_id=med.medicine_id,
         name=med.name,
@@ -50,6 +55,7 @@ def _build_inventory_view(
         suggested_restock=suggested_restock,
         needs_restock=suggested_restock > 0,
         usage_trend=usage_trend,
+        usage_monthly=usage_monthly,
     )
 
 
@@ -59,7 +65,28 @@ def _build_date_labels() -> List[str]:
     return [(start_date + timedelta(days=i)).isoformat() for i in range(USAGE_WINDOW_DAYS)]
 
 
-async def _load_usage_stats(session: AsyncSession) -> Tuple[Dict[int, int], Dict[int, List[Dict[str, int]]], List[str]]:
+def _shift_month(base_year: int, base_month: int, delta: int) -> date:
+    total_months = base_year * 12 + (base_month - 1) + delta
+    new_year = total_months // 12
+    new_month = total_months % 12 + 1
+    return date(new_year, new_month, 1)
+
+
+def _build_month_labels(months: int = 12) -> List[str]:
+    today = date.today().replace(day=1)
+    start = _shift_month(today.year, today.month, -(months - 1))
+    return [_shift_month(start.year, start.month, i).strftime("%Y-%m") for i in range(months)]
+
+
+async def _load_usage_stats(
+    session: AsyncSession,
+) -> Tuple[
+    Dict[int, int],
+    Dict[int, List[Dict[str, int]]],
+    List[str],
+    Dict[int, List[Dict[str, int]]],
+    List[str],
+]:
     cutoff = datetime.now() - timedelta(days=USAGE_WINDOW_DAYS - 1)
     stmt = (
         select(
@@ -84,7 +111,30 @@ async def _load_usage_stats(session: AsyncSession) -> Tuple[Dict[int, int], Dict
     for med_id, day_map in usage_daily.items():
         trend_map[med_id] = [{"date": label, "quantity": day_map.get(label, 0)} for label in date_labels]
 
-    return usage_totals, trend_map, date_labels
+    # 近 12 个月按月用量
+    month_labels = _build_month_labels(12)
+    month_cutoff = datetime.combine(_shift_month(date.today().year, date.today().month, -11), datetime.min.time())
+    stmt_month = (
+        select(
+            PrescriptionDetail.medicine_id,
+            func.date_format(Prescription.create_time, "%Y-%m").label("usage_month"),
+            func.coalesce(func.sum(PrescriptionDetail.quantity), 0).label("qty"),
+        )
+        .join(Prescription, PrescriptionDetail.pres_id == Prescription.pres_id)
+        .where(Prescription.create_time >= month_cutoff)
+        .group_by(PrescriptionDetail.medicine_id, "usage_month")
+    )
+    month_rows = await session.execute(stmt_month)
+    month_series_map: Dict[int, Dict[str, int]] = {}
+    for med_id, usage_month, qty in month_rows.all():
+        qty_int = int(qty or 0)
+        month_series_map.setdefault(med_id, {})[str(usage_month)] = qty_int
+
+    monthly_trend_map: Dict[int, List[Dict[str, int]]] = {}
+    for med_id, month_map in month_series_map.items():
+        monthly_trend_map[med_id] = [{"date": label, "quantity": month_map.get(label, 0)} for label in month_labels]
+
+    return usage_totals, trend_map, date_labels, monthly_trend_map, month_labels
 
 
 # 简单的医生验证
@@ -109,8 +159,11 @@ async def get_current_pharmacist(
 @router.get("/medicines", response_model=List[MedicineInventory])
 async def get_medicines(session: AsyncSession = Depends(get_session)):
     meds = (await session.execute(select(Medicine))).scalars().all()
-    usage_map, trend_map, date_labels = await _load_usage_stats(session)
-    return [_build_inventory_view(med, usage_map, trend_map, date_labels) for med in meds]
+    usage_map, trend_map, date_labels, monthly_trend_map, month_labels = await _load_usage_stats(session)
+    return [
+        _build_inventory_view(med, usage_map, trend_map, date_labels, monthly_trend_map, month_labels)
+        for med in meds
+    ]
 
 
 @router.post("/medicines/replenish", response_model=List[MedicineInventory])
@@ -119,10 +172,10 @@ async def replenish_medicines(
     session: AsyncSession = Depends(get_session),
 ):
     meds = (await session.execute(select(Medicine))).scalars().all()
-    usage_map, trend_map, date_labels = await _load_usage_stats(session)
+    usage_map, trend_map, date_labels, monthly_trend_map, month_labels = await _load_usage_stats(session)
     restocked = False
     for med in meds:
-        view = _build_inventory_view(med, usage_map, trend_map, date_labels)
+        view = _build_inventory_view(med, usage_map, trend_map, date_labels, monthly_trend_map, month_labels)
         if view.suggested_restock > 0:
             med.stock += view.suggested_restock
             session.add(med)
@@ -132,7 +185,10 @@ async def replenish_medicines(
         meds = (await session.execute(select(Medicine))).scalars().all()
     else:
         await session.rollback()
-    return [_build_inventory_view(med, usage_map, trend_map, date_labels) for med in meds]
+    return [
+        _build_inventory_view(med, usage_map, trend_map, date_labels, monthly_trend_map, month_labels)
+        for med in meds
+    ]
 
 
 @router.post("/medicines/purchase", response_model=Medicine)

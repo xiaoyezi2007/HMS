@@ -48,3 +48,4 @@ class MedicineInventory(SQLModel):
     suggested_restock: int
     needs_restock: bool
     usage_trend: List[UsagePoint]
+    usage_monthly: List[UsagePoint]

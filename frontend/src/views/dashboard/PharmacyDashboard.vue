@@ -191,7 +191,7 @@
             <div class="usage-cell usage-cell--clickable" @click="openTrendDialog(row)">
               <span>日均 {{ row.avg_daily_usage ? row.avg_daily_usage.toFixed(2) : '0.00' }}</span>
               <span>七天 {{ row.expected_week_usage }}</span>
-              <span class="usage-cell__link">查看30天曲线</span>
+              <span class="usage-cell__link">查看用量详情</span>
             </div>
           </template>
         </el-table-column>
@@ -206,14 +206,21 @@
 
     <el-dialog
       v-model="trendDialogVisible"
-      :title="trendMedicine ? `${trendMedicine.name} · 30天用量` : '30天用量'"
+      :title="trendMedicine ? `${trendMedicine.name} · 用量趋势` : '用量趋势'"
       width="720px"
     >
-      <div v-if="trendData.length" class="trend-chart">
+      <div v-if="displayTrendData.length" class="trend-chart">
+        <div class="trend-chart__toolbar">
+          <span class="trend-chart__title">{{ trendMode === 'monthly' ? '近12个月用量' : '近30天用量' }}</span>
+          <el-button-group size="small">
+            <el-button :type="trendMode === 'daily' ? 'primary' : 'default'" @click="trendMode = 'daily'">近30天</el-button>
+            <el-button :type="trendMode === 'monthly' ? 'primary' : 'default'" @click="trendMode = 'monthly'">近12个月</el-button>
+          </el-button-group>
+        </div>
         <div class="trend-chart__grid">
-          <div class="trend-chart__bars">
+          <div class="trend-chart__bars" :style="{ gridTemplateColumns: getGridColumns() }">
             <div
-              v-for="point in trendData"
+              v-for="point in displayTrendData"
               :key="point.date"
               class="trend-bar"
               :style="{ height: getBarHeight(point.quantity) }"
@@ -230,12 +237,12 @@
           </div>
         </div>
         <div class="trend-chart__axis">
-          <span>{{ trendData[0].date }}</span>
+          <span>{{ displayTrendData[0].date }}</span>
           <span>最大 {{ trendStats.max }}</span>
-          <span>{{ trendData[trendData.length - 1].date }}</span>
+          <span>{{ displayTrendData[displayTrendData.length - 1].date }}</span>
         </div>
       </div>
-      <div v-else class="trend-chart__empty">暂无近30天用量数据</div>
+      <div v-else class="trend-chart__empty">暂无 {{ trendMode === 'monthly' ? '12个月' : '30天' }} 用量数据</div>
       <template #footer>
         <el-button @click="trendDialogVisible = false">关闭</el-button>
       </template>
@@ -267,19 +274,23 @@ const planningHorizonDays = 7;
 const restockLoading = ref(false);
 const trendDialogVisible = ref(false);
 const trendMedicine = ref<MedicineItem | null>(null);
-const trendData = ref<UsagePoint[]>([]);
+const trendDailyData = ref<UsagePoint[]>([]);
+const trendMonthlyData = ref<UsagePoint[]>([]);
+const trendMode = ref<"daily" | "monthly">("daily");
 
 const lowStockList = computed(() =>
   medicines.value.filter((med) => med.needs_restock || med.stock < lowStockThreshold)
 );
 const needsRestockCount = computed(() => medicines.value.filter((med) => med.suggested_restock > 0).length);
+const displayTrendData = computed(() => (trendMode.value === "monthly" ? trendMonthlyData.value : trendDailyData.value));
+
 const trendStats = computed(() => {
-  if (!trendData.value.length) {
+  if (!displayTrendData.value.length) {
     return { max: 0, avg: 0 };
   }
-  const quantities = trendData.value.map((p) => p.quantity);
+  const quantities = displayTrendData.value.map((p) => p.quantity);
   const max = Math.max(...quantities, 0);
-  const avg = quantities.reduce((sum, val) => sum + val, 0) / trendData.value.length;
+  const avg = quantities.reduce((sum, val) => sum + val, 0) / displayTrendData.value.length;
   return { max, avg };
 });
 
@@ -375,7 +386,9 @@ async function handleReplenish() {
 
 function openTrendDialog(medicine: MedicineItem) {
   trendMedicine.value = medicine;
-  trendData.value = medicine.usage_trend ?? [];
+  trendDailyData.value = medicine.usage_trend ?? [];
+  trendMonthlyData.value = medicine.usage_monthly ?? [];
+  trendMode.value = "daily";
   trendDialogVisible.value = true;
 }
 
@@ -390,6 +403,11 @@ function getAverageLinePosition() {
   if (!trendStats.value.avg) return "0%";
   const ratio = trendStats.value.avg / max;
   return `${Math.min(Math.max(ratio * 100, 0), 100)}%`;
+}
+
+function getGridColumns() {
+  const count = displayTrendData.value.length || 1;
+  return `repeat(${count}, minmax(6px, 1fr))`;
 }
 
 onMounted(loadMedicines);
@@ -468,6 +486,17 @@ onMounted(loadMedicines);
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.trend-chart__toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.trend-chart__title {
+  color: #606266;
+  font-size: 13px;
 }
 
 .trend-chart__grid {

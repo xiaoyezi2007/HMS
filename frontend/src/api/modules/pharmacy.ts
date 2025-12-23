@@ -17,6 +17,7 @@ export interface MedicineItem {
   suggested_restock: number;
   needs_restock: boolean;
   usage_trend: UsagePoint[];
+  usage_monthly: UsagePoint[];
 }
 
 export interface PrescriptionItemPayload {
