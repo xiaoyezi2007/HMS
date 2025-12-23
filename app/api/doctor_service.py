@@ -9,6 +9,9 @@ from sqlmodel import select, SQLModel
 from typing import List, Optional
 import io
 import json
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from app.core.config import get_session
 # --- 修改点：从 deps 导入，不再依赖 patient_service ---
@@ -700,38 +703,54 @@ async def generate_transfer_form(
         exam_stmt = select(Examination).where(Examination.record_id == record.record_id)
         exams = (await session.execute(exam_stmt)).scalars().all()
 
-    lines = [
-        "转院申请单",
-        f"患者：{patient.name}",
-        f"联系方式：{patient.phone}",
-        "",
-        "【挂号信息】",
-        f"挂号时间：{format_datetime(registration.reg_date)}",
-        f"就诊日期：{registration.visit_date.strftime('%Y-%m-%d') if registration.visit_date else ''}",
-        "",
-        "【病历摘要】"
-    ]
-    if record:
-        lines.extend([
-            f"主诉：{record.complaint}",
-            f"诊断：{record.diagnosis}",
-            f"建议：{record.suggestion}",
-        ])
-    else:
-        lines.append("尚未填写病历")
+    doc = Document()
 
-    lines.append("")
-    lines.append("【检查记录】")
+    def add_text(para_text: str, bold: bool = False, size: int = 12, align: WD_ALIGN_PARAGRAPH = None):
+        p = doc.add_paragraph()
+        if align:
+            p.alignment = align
+        run = p.add_run(para_text)
+        run.bold = bold
+        run.font.size = Pt(size)
+        return p
+
+    add_text("转院申请单", bold=True, size=20, align=WD_ALIGN_PARAGRAPH.CENTER)
+
+    add_text(f"转入医院：____________________________")
+    add_text(f"患者姓名：{patient.name or ''}")
+    add_text(f"联系方式：{patient.phone or ''}")
+    add_text(f"就诊日期：{registration.visit_date.strftime('%Y-%m-%d') if registration.visit_date else ''}")
+    add_text("")
+
+    add_text("【申请说明】", bold=True)
+    add_text("因患者病情需要进一步诊治，特申请将患者转入上述医院继续治疗。请贵院协助接诊并提供后续诊疗支持。")
+    add_text("")
+
+    add_text("【病历摘要】", bold=True)
+    if record:
+        add_text(f"主诉：{record.complaint}")
+        add_text(f"诊断：{record.diagnosis}")
+        add_text(f"建议：{record.suggestion}")
+    else:
+        add_text("尚未填写病历")
+    add_text("")
+
+    add_text("【检查记录】", bold=True)
     if exams:
         for exam in exams:
-            lines.append(f"{exam.type} · 结果：{exam.result} · {format_datetime(exam.date)}")
+            add_text(f"· {exam.type} · 结果：{exam.result} · {format_datetime(exam.date)}")
     else:
-        lines.append("暂未开具检查")
+        add_text("暂未开具检查")
 
-    content = "\n".join(lines)
-    payload = io.BytesIO(content.encode("utf-8"))
-    response = StreamingResponse(payload, media_type="text/plain")
-    response.headers["content-disposition"] = f"attachment; filename=transfer_{reg_id}.txt"
+    add_text("")
+    add_text("申请科室/医生签字：____________________________")
+    add_text("日期：____________________________")
+
+    payload = io.BytesIO()
+    doc.save(payload)
+    payload.seek(0)
+    response = StreamingResponse(payload, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    response.headers["content-disposition"] = f"attachment; filename=transfer_{reg_id}.docx"
     return response
 # --- 新：开始办理（将 status 从 WAITING 改为 IN_PROGRESS） ---
 @router.post("/consultations/{reg_id}/start")

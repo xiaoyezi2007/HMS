@@ -30,7 +30,7 @@
           <small>展示所属科室的病房、床位、占用情况</small>
         </div>
         <div class="ward-actions">
-          <el-button type="info" size="small" :loading="transferLoading" @click="onTransfer">导出转院单</el-button>
+          <el-button type="primary" size="small" plain :loading="transferLoading" @click="onTransfer">导出转院单</el-button>
         </div>
       </div>
       <div class="doctor-select-row">
@@ -637,11 +637,11 @@ async function onTransfer() {
   transferLoading.value = true;
   try {
     const response = await exportTransferForm(regId);
-    const blob = new Blob([response.data], { type: "text/plain" });
+    const blob = new Blob([response.data], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `transfer_${regId}.txt`;
+    link.download = `transfer_${regId}.docx`;
     link.click();
     URL.revokeObjectURL(url);
   } catch (err: any) {
