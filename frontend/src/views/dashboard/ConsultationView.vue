@@ -7,6 +7,14 @@
           <div v-if="patient" style="margin-top:6px; font-size:18px; font-weight:700; color:#1f2d3d;">
             患者：{{ patient.name }}
           </div>
+          <el-alert
+            type="warning"
+            effect="dark"
+            :closable="false"
+            show-icon
+            class="inline-tip"
+            title="请先完成病历填写，再进行检查、处方或住院操作"
+          />
         </div>
         <div class="header-actions">
           <el-button type="primary" link @click="openHistoryDialog" style="margin-right:8px">查询历史病历</el-button>
@@ -681,6 +689,12 @@ watch(historyRange, () => {
   transition: box-shadow .18s ease, transform .12s ease;
   border-radius: 8px;
   min-height: 130px;
+}
+
+.inline-tip {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
 }
 .option-card:hover {
   box-shadow: 0 6px 14px rgba(13,27,42,0.10);
