@@ -15,6 +15,7 @@ from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from app.core.config import get_session
+from app.core.time_utils import today_bj
 # --- 修改点：从 deps 导入，不再依赖 patient_service ---
 from app.api.deps import get_current_user_phone
 from app.models.user import UserAccount, UserRole
@@ -207,9 +208,9 @@ async def get_my_schedule(
         doctor: Doctor = Depends(get_current_doctor),
         session: AsyncSession = Depends(get_session)
 ):
+    today = today_bj()
     # Auto-expire overdue registrations (WAITING and visit_date has passed)
     try:
-        today = date.today()
         overdue_stmt = select(Registration).where(
             Registration.doctor_id == doctor.doctor_id,
             Registration.status == RegStatus.WAITING,
@@ -247,7 +248,8 @@ async def get_my_schedule(
     # 返回排队中和办理中的挂号，医生在完成办理后挂号会被标记为已结束并从列表中消失
     stmt = select(Registration).where(
         Registration.doctor_id == doctor.doctor_id,
-        Registration.status.in_([RegStatus.WAITING, RegStatus.IN_PROGRESS])
+        Registration.status.in_([RegStatus.WAITING, RegStatus.IN_PROGRESS]),
+        Registration.visit_date == today,
     )
     result = await session.execute(stmt)
     return result.scalars().all()

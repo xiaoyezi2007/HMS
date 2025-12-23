@@ -34,7 +34,9 @@ async def register(
     session: AsyncSession = Depends(get_session)
 ):
     ip_address = _extract_client_ip(request)
-    window_start = datetime.utcnow() - timedelta(minutes=1)
+    # Use the same local (Beijing) time source as `RegistrationAttempt.created_at`
+    # to avoid treating old attempts as recent due to UTC/local mismatches.
+    window_start = now_bj() - timedelta(minutes=1)
 
     attempt_stmt = select(func.count()).where(
         RegistrationAttempt.ip_address == ip_address,
