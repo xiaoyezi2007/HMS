@@ -9,6 +9,7 @@ export interface RegistrationItem {
   status: string;
   patient_id: number;
   doctor_id: number;
+  symptoms?: string | null;
 }
 
 export interface MedicalRecordPayload {
@@ -84,6 +85,7 @@ export interface DoctorPatientRegistrationHistoryItem {
   doctor_id: number;
   patient_id: number;
   is_current: boolean;
+  symptoms?: string | null;
   record?: {
     record_id: number;
     complaint?: string | null;

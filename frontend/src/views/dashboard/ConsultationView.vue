@@ -7,6 +7,11 @@
           <div v-if="patient" style="margin-top:6px; font-size:18px; font-weight:700; color:#1f2d3d;">
             患者：{{ patient.name }}
           </div>
+          <div v-if="registration && registration.symptoms" class="symptom-box">
+            <span class="symptom-label">患者症状自述：</span>
+            <span class="symptom-text">{{ registration.symptoms }}</span>
+          </div>
+          <div v-else class="symptom-box muted">患者未填写症状</div>
           <el-alert
             type="warning"
             effect="dark"
@@ -274,7 +279,7 @@ import { computed, onMounted, reactive, ref, watch, defineComponent, h } from "v
 import { FirstAidKit, Document, List, CreditCard } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import { startHandling, finishHandling, submitMedicalRecord, fetchConsultationInfo, fetchMedicalRecordByReg, createExamination, fetchExaminations, fetchDoctorWards, hospitalizePatient, exportTransferForm, fetchPatientRegistrationHistory, fetchDeptDoctors, type DoctorPatientRegistrationHistoryItem, type HistoryRange, type WardInfo, type DoctorBrief } from "../../api/modules/doctor";
+import { startHandling, finishHandling, submitMedicalRecord, fetchConsultationInfo, fetchMedicalRecordByReg, createExamination, fetchExaminations, fetchDoctorWards, hospitalizePatient, exportTransferForm, fetchPatientRegistrationHistory, fetchDeptDoctors, type DoctorPatientRegistrationHistoryItem, type HistoryRange, type WardInfo, type DoctorBrief, type RegistrationItem } from "../../api/modules/doctor";
 import { fetchPatientById } from "../../api/modules/patient";
 
 const BedIcon = defineComponent({
@@ -307,6 +312,7 @@ const router = useRouter();
 const regId = Number(route.params.reg_id || route.query.reg_id || 0);
 const patientIdQuery = Number(route.query.patient_id || 0);
 const currentDoctorId = ref<number | null>(null);
+const registration = ref<RegistrationItem | null>(null);
 
 const patient = ref(null as any);
 const recordDialogVisible = ref(false);
@@ -339,6 +345,9 @@ async function ensureStarted() {
   try {
     const { data } = await fetchConsultationInfo(regId);
     const reg = data?.registration;
+    if (reg) {
+      registration.value = reg as RegistrationItem;
+    }
     if (data?.patient) {
       patient.value = data.patient;
     }
@@ -430,6 +439,9 @@ async function loadPatient() {
     const { data } = await fetchConsultationInfo(regId);
     // data.patient 包含患者信息
     patient.value = data.patient;
+    if (data?.registration) {
+      registration.value = data.registration as RegistrationItem;
+    }
   } catch (err) {
     // ignore — 页面仍然可用
   }
@@ -679,6 +691,30 @@ watch(historyRange, () => {
 <style scoped>
 .mt-3 {
   margin-top: 16px;
+}
+
+.symptom-box {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f5f7fa;
+  color: #1f2d3d;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.symptom-box.muted {
+  color: #94a3b8;
+}
+
+.symptom-label {
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.symptom-text {
+  white-space: pre-wrap;
 }
 
 .option-grid {

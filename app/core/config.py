@@ -83,6 +83,24 @@ async def init_db():
                         # best-effort: don't block app startup if migration fails
                         pass
 
+                    # Add symptoms column to registration table if missing.
+                    try:
+                        exists = await conn.execute(
+                            text(
+                                """
+                                SELECT COUNT(*)
+                                FROM information_schema.columns
+                                WHERE table_schema = DATABASE()
+                                  AND table_name = 'registration'
+                                  AND column_name = 'symptoms'
+                                """
+                            )
+                        )
+                        if (exists.scalar() or 0) == 0:
+                            await conn.execute(text("ALTER TABLE registration ADD COLUMN symptoms VARCHAR(500) NULL"))
+                    except Exception:
+                        pass
+
                     # Extend registration.status ENUM to include EXPIRED if needed.
                     try:
                         col = await conn.execute(

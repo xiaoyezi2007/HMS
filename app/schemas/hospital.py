@@ -18,6 +18,7 @@ class RegistrationCreate(SQLModel):
     doctor_id: int
     reg_type: RegType = RegType.NORMAL
     visit_date: date = date.today()
+    symptoms: str | None = None
 
 # --- 医生写病历 ---
 class MedicalRecordCreate(SQLModel):

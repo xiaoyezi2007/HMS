@@ -43,6 +43,16 @@
             :disabled-date="disabledPastDates"
           />
         </el-form-item>
+        <el-form-item label="症状描述">
+          <el-input
+            v-model="regForm.symptoms"
+            type="textarea"
+            :rows="3"
+            placeholder="请简要描述主要症状（可选，最多 500 字）"
+            :maxlength="500"
+            show-word-limit
+          />
+        </el-form-item>
         <el-form-item>
           <el-button type="success" :loading="regLoading" @click="submitRegistration">提交挂号</el-button>
         </el-form-item>
@@ -115,6 +125,7 @@
           <p><strong>费用：</strong>￥{{ formatFee(selectedRegistration.fee) }}</p>
           <p><strong>当前状态：</strong>{{ normalizeStatus(selectedRegistration.status) }}</p>
           <p><strong>医生：</strong>{{ doctorName ?? selectedRegistration.doctor_id }}</p>
+          <p><strong>患者症状：</strong>{{ selectedRegistration.symptoms || '—' }}</p>
 
           <el-divider />
           <div>
@@ -225,7 +236,8 @@ const regForm = reactive({
   dept_id: undefined as number | undefined,
   doctor_id: undefined as number | undefined,
   reg_type: "普通号",
-  visit_date: getTodayYmd()
+  visit_date: getTodayYmd(),
+  symptoms: ""
 });
 
 const filteredDoctors = computed(() => {
@@ -509,7 +521,12 @@ async function submitRegistration() {
   }
   regLoading.value = true;
   try {
-    await createRegistration({ doctor_id: regForm.doctor_id, reg_type: regForm.reg_type, visit_date: regForm.visit_date });
+    await createRegistration({
+      doctor_id: regForm.doctor_id,
+      reg_type: regForm.reg_type,
+      visit_date: regForm.visit_date,
+      symptoms: regForm.symptoms?.trim() || undefined
+    });
     ElMessage.success("挂号成功，等待医生处理");
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail ?? "挂号失败");

@@ -37,12 +37,10 @@ IMPORT_TEMPLATE_HEADERS: List[Tuple[str, str]] = [
     ("phone", "手机号 (必填)"),
     ("username", "用户名/昵称 (必填)"),
     ("role", "角色：医生/护士/药师"),
-    ("dept_id", "医生所属科室 ID (必填，可在“科室列表”工作表查看)"),
-    ("doctor_name", "医生姓名"),
-    ("doctor_gender", "医生性别：男/女"),
-    ("doctor_title", "医生级别：普通医师/专家医师"),
-    ("nurse_name", "护士姓名"),
-    ("nurse_gender", "护士性别：男/女")
+    ("dept_id", "医生所属科室 ID (医生必填，可在“科室列表”工作表查看)"),
+    ("name", "姓名 (必填，医生/护士填写真实姓名)"),
+    ("gender", "性别：男/女 (医生/护士必填)"),
+    ("doctor_title", "医生级别：普通医师/专家医师（仅医生填写）")
 ]
 
 COLUMN_ALIAS_MAP = {
@@ -55,16 +53,20 @@ COLUMN_ALIAS_MAP = {
     "dept_id": "dept_id",
     "科室id": "dept_id",
     "department": "dept_id",
-    "doctor_name": "doctor_name",
-    "医生姓名": "doctor_name",
-    "doctor_gender": "doctor_gender",
-    "医生性别": "doctor_gender",
+    "name": "name",
+    "姓名": "name",
+    "doctor_name": "name",
+    "医生姓名": "name",
+    "nurse_name": "name",
+    "护士姓名": "name",
+    "gender": "gender",
+    "性别": "gender",
+    "doctor_gender": "gender",
+    "医生性别": "gender",
+    "nurse_gender": "gender",
+    "护士性别": "gender",
     "doctor_title": "doctor_title",
-    "医生级别": "doctor_title",
-    "nurse_name": "nurse_name",
-    "护士姓名": "nurse_name",
-    "nurse_gender": "nurse_gender",
-    "护士性别": "nurse_gender"
+    "医生级别": "doctor_title"
 }
 
 ROLE_ALIAS_MAP = {
@@ -215,27 +217,35 @@ def _row_to_payload(row: Dict[str, Any]) -> StaffAccountCreate:
     phone = _safe_text(row.get("phone"))
     if not phone:
         raise ValueError("手机号不能为空")
+
     username = _safe_text(row.get("username"))
     if not username:
         raise ValueError("用户名不能为空")
+
     role = _normalize_role_value(row.get("role"))
     dept_id = _coerce_int(row.get("dept_id"))
-    doctor_gender = None
-    nurse_gender = None
-    if _safe_text(row.get("doctor_gender")):
-        doctor_gender = _normalize_gender_value(row.get("doctor_gender"))
-    if _safe_text(row.get("nurse_gender")):
-        nurse_gender = _normalize_gender_value(row.get("nurse_gender"))
+
+    combined_name = _optional_text(
+        row.get("name") or row.get("doctor_name") or row.get("nurse_name")
+    )
+    raw_gender = row.get("gender") or row.get("doctor_gender") or row.get("nurse_gender")
+    normalized_gender = _normalize_gender_value(raw_gender) if _safe_text(raw_gender) else None
     doctor_title = _normalize_doctor_title_text(row.get("doctor_title"))
+
+    doctor_name = combined_name if role == UserRole.DOCTOR else None
+    nurse_name = combined_name if role == UserRole.NURSE else None
+    doctor_gender = normalized_gender if role == UserRole.DOCTOR else None
+    nurse_gender = normalized_gender if role == UserRole.NURSE else None
+
     return StaffAccountCreate(
         phone=phone,
         username=username,
         role=role,
         dept_id=dept_id,
-        doctor_name=_optional_text(row.get("doctor_name")),
+        doctor_name=doctor_name,
         doctor_gender=doctor_gender,
         doctor_title=doctor_title,
-        nurse_name=_optional_text(row.get("nurse_name")),
+        nurse_name=nurse_name,
         nurse_gender=nurse_gender
     )
 
@@ -255,27 +265,21 @@ def _build_template_workbook(departments: Optional[List[Department]] = None) -> 
         sample_dept_id,
         "张三",
         "男",
-        "专家医师",
-        "",
-        ""
+        "专家医师"
     ])
     sheet.append([
         "13900000002",
         "李四-护士",
         "护士",
         "",
-        "",
-        "",
-        "",
         "李四",
-        "女"
+        "女",
+        ""
     ])
     sheet.append([
         "13700000003",
         "赵六-药师",
         "药师",
-        "",
-        "",
         "",
         "",
         "",
@@ -285,7 +289,7 @@ def _build_template_workbook(departments: Optional[List[Department]] = None) -> 
 
     notes = workbook.create_sheet("须知")
     notes.append(["请勿修改账号导入表的表头，按列填写信息。"])
-    notes.append(["手机号、用户名、角色为必填项。医生需填写医生姓名/性别/级别，并在‘医生所属科室 ID’列中填写对应科室号，可在‘科室列表’查看。"])
+    notes.append(["手机号、用户名、角色为必填项。医生需填写姓名/性别/级别，并在‘医生所属科室 ID’列中填写对应科室号；护士需填写姓名/性别。"])
     notes.append(["模板内提供‘科室列表’工作表，可查阅 科室号 与 科室名称 对应关系。"])
     notes.append(["‘角色’、‘性别’、‘医生级别’列已提供下拉选项，直接选择即可。"])
     notes.append(["允许上传 .xlsx 或 .csv 文件，建议使用此模板直接编辑。"])
@@ -310,7 +314,6 @@ def _build_template_workbook(departments: Optional[List[Department]] = None) -> 
 
     add_list_validation(role_formula, "C")
     add_list_validation(gender_formula, "F")
-    add_list_validation(gender_formula, "I")
     add_list_validation(doctor_title_formula, "G")
 
     if dept_list:

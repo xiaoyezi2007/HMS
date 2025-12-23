@@ -277,6 +277,7 @@ async def create_registration(
         doctor_id=reg_in.doctor_id,
         reg_type=reg_in.reg_type,
         visit_date=visit_date,
+        symptoms=getattr(reg_in, "symptoms", None),
         fee=fee,
         status=RegStatus.WAITING
     )

@@ -71,6 +71,7 @@ class Registration(SQLModel, table=True):
     reg_type: RegType = Field(default=RegType.NORMAL)
     fee: float = Field(default=0.0)
     status: RegStatus = Field(default=RegStatus.WAITING)
+    symptoms: Optional[str] = Field(default=None, max_length=500, description="患者自述症状")
 
     # 外键
     patient_id: int = Field(foreign_key="patient.patient_id")

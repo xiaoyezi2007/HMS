@@ -30,6 +30,7 @@ export interface RegistrationPayload {
   doctor_id: number;
   reg_type: string;
   visit_date?: string;
+  symptoms?: string | null;
 }
 
 export interface RegistrationItem {
@@ -41,6 +42,7 @@ export interface RegistrationItem {
   status: string;
   patient_id: number;
   doctor_id: number;
+  symptoms?: string | null;
 }
 
 export function createPatientProfile(payload: PatientProfile) {
