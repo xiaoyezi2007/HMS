@@ -1,10 +1,7 @@
 <template>
   <div class="doctor-prescription">
     <el-card>
-      <h3>为挂号 {{ regId }} 开具处方</h3>
-      <div v-if="patient">
-        <small>患者：{{ patient.name }} （ID: {{ patient.patient_id }}）</small>
-      </div>
+      <h3>{{ prescriptionTitle }}</h3>
     </el-card>
 
     <el-card class="mt-3">
@@ -98,6 +95,11 @@ import { fetchMedicalRecordByReg, submitMedicalRecord, fetchConsultationInfo, st
 const route = useRoute();
 const router = useRouter();
 const regId = Number(route.params.reg_id || route.query.reg_id || 0);
+
+const prescriptionTitle = computed(() => {
+  const name = patient.value?.name;
+  return name ? `为患者 ${name} 开具处方` : "为患者开具处方";
+});
 
 const medicines = ref<any[]>([]);
 const medLoading = ref(true);

@@ -289,6 +289,13 @@ const adminShortcuts = [
     onClick: () => router.push("/workspace/admin/revenue")
   },
   {
+    title: "操作日志",
+    desc: "查看系统操作审计记录",
+    icon: Reading,
+    color: "#e2f3ff",
+    onClick: () => router.push("/workspace/admin/logs")
+  },
+  {
     title: "个人主页",
     desc: "查看账号信息与密码",
     icon: UserFilled,
