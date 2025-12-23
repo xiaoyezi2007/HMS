@@ -2,7 +2,7 @@
   <div class="doctor-board">
     <el-alert type="success" show-icon :closable="false">
       <template #title>待诊列表</template>
-      接诊完成后系统会自动将挂号状态更新为“已完成”，并返回新病历号用于处方流
+      你守护生命的样子，就是人间最美的风景。祝您工作顺利！
     </el-alert>
 
     <el-card class="mt-3">

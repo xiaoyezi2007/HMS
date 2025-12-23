@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span>操作日志</span>
-          <small>院长可查看登录与操作轨迹，支持按账号/角色/路径筛选</small>
+          <small>可查看登录与操作轨迹，支持按账号/角色/路径筛选</small>
         </div>
       </template>
       <div class="filter-bar">

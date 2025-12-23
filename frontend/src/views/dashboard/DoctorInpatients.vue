@@ -80,7 +80,7 @@
         class="plan-hint"
         type="info"
         show-icon
-        title="可一次性配置多条护理计划，系统会按频次自动拆分成具体任务"
+        title="可一次性配置多条护理计划，祝您工作顺利！"
       />
       <el-empty v-if="!taskPlans.length" description="暂未添加护理计划" class="plan-empty">
         <template #extra>
@@ -230,7 +230,7 @@
     <el-dialog
       v-model="historyDialogVisible"
       :title="'历史病历'"
-      width="780px"
+      width="920px"
       destroy-on-close
     >
       <div v-if="historyContext" class="history-header">
@@ -874,10 +874,11 @@ onMounted(() => {
 
 .history-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   margin-bottom: 16px;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .history-name {
@@ -900,7 +901,8 @@ onMounted(() => {
 
 .history-collapse {
   max-height: 420px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .history-title {
@@ -919,6 +921,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 6px;
   font-size: 14px;
+  word-break: break-word;
 }
 
 .history-body-meta {

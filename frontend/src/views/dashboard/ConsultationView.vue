@@ -118,7 +118,7 @@
                 <List class="option-icon" />
                 <div>
                   <div style="font-weight:700; font-size:14px">开具处方</div>
-                  <div style="color:var(--el-text-color-secondary); font-size:12px">为患者选药并生成处方（会反映库存）</div>
+                  <div style="color:var(--el-text-color-secondary); font-size:12px">为患者选药并生成处方</div>
                 </div>
               </div>
               <div class="action-row">
@@ -186,7 +186,7 @@
       </el-form>
       <template #footer>
         <el-button @click="examDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="examLoading" @click="submitExam">开具并生成结果</el-button>
+        <el-button type="primary" :loading="examLoading" @click="submitExam">开具并获取结果</el-button>
       </template>
     </el-dialog>
 
@@ -534,7 +534,7 @@ watch(historyDialogVisible, (visible) => {
 
 function onExit() {
   // 仅退出接诊页面，不改变挂号状态（保持为就诊中）
-  ElMessage.info("已退出接诊，挂号仍为就诊中，可在医生端继续处理");
+  ElMessage.info("暂时退出接诊，可稍后继续处理~");
   router.push({ path: "/workspace/doctor" });
 }
 

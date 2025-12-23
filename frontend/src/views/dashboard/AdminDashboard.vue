@@ -1,7 +1,8 @@
 <template>
   <div class="admin-board">
     <el-alert
-      title="院长可在此创建与注销医生/护士/药师账户，初始密码统一为 123456，首次登录后请提醒及时修改"
+      v-if="!isDeptSection"
+      title="在此创建与注销医生/护士/药师账户，初始密码统一为 123456"
       type="info"
       show-icon
     />
@@ -11,7 +12,7 @@
         <template #header>
           <div class="card-header">
             <span>新增科室</span>
-            <small>仅院长可操作，科室名称需唯一</small>
+            <small>科室名称需唯一</small>
           </div>
         </template>
         <el-form :model="deptForm" label-width="90px">

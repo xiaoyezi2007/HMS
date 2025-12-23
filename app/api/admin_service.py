@@ -285,8 +285,8 @@ def _build_template_workbook(departments: Optional[List[Department]] = None) -> 
 
     notes = workbook.create_sheet("须知")
     notes.append(["请勿修改账号导入表的表头，按列填写信息。"])
-    notes.append(["手机号、用户名、角色为必填项。医生需填写医生姓名/性别/级别，并在‘医生所属科室 ID’列中填写对应数字，可在‘科室列表’查看。"])
-    notes.append(["模板内提供‘科室列表’工作表，可查阅 ID 与名称对应关系。"])
+    notes.append(["手机号、用户名、角色为必填项。医生需填写医生姓名/性别/级别，并在‘医生所属科室 ID’列中填写对应科室号，可在‘科室列表’查看。"])
+    notes.append(["模板内提供‘科室列表’工作表，可查阅 科室号 与 科室名称 对应关系。"])
     notes.append(["‘角色’、‘性别’、‘医生级别’列已提供下拉选项，直接选择即可。"])
     notes.append(["允许上传 .xlsx 或 .csv 文件，建议使用此模板直接编辑。"])
 
