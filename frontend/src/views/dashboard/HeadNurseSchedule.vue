@@ -99,7 +99,12 @@
       <el-form :model="editForm" label-width="100px">
         <el-form-item label="病房">
           <el-select v-model="editForm.ward_id" placeholder="请选择病房">
-            <el-option v-for="ward in context.wards" :key="ward.ward_id" :value="ward.ward_id" :label="ward.ward_type" />
+            <el-option
+              v-for="ward in context.wards"
+              :key="ward.ward_id"
+              :value="ward.ward_id"
+              :label="`${ward.ward_type} (#${ward.ward_id})`"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="开始时间">
