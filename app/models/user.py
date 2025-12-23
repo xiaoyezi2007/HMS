@@ -1,6 +1,8 @@
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from typing import Optional
+
+from app.core.time_utils import now_bj
 from enum import Enum
 
 
@@ -37,4 +39,16 @@ class UserAccount(SQLModel, table=True):
 class RegistrationAttempt(SQLModel, table=True):
     attempt_id: Optional[int] = Field(default=None, primary_key=True)
     ip_address: str = Field(max_length=45, index=True, description="请求来源 IP")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_bj)
+
+
+class UserActionLog(SQLModel, table=True):
+    log_id: Optional[int] = Field(default=None, primary_key=True)
+    user_phone: str = Field(max_length=11, foreign_key="useraccount.phone", index=True)
+    role: str = Field(max_length=20, description="用户角色快照")
+    method: str = Field(max_length=10, description="HTTP 方法")
+    path: str = Field(max_length=255, description="请求路径")
+    action: str = Field(max_length=255, description="简要动作描述")
+    status_code: int = Field(description="响应状态码")
+    ip_address: str = Field(max_length=45, description="请求来源 IP")
+    created_at: datetime = Field(default_factory=now_bj, description="发生时间")

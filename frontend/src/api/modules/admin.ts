@@ -104,6 +104,18 @@ export interface AccountImportResult {
   errors: AccountImportError[];
 }
 
+export interface UserActionLogItem {
+  log_id: number;
+  user_phone: string;
+  role: string;
+  method: string;
+  path: string;
+  action: string;
+  status_code: number;
+  ip_address: string;
+  created_at: string;
+}
+
 export function fetchStaffAccounts(role?: string) {
   if (role) {
     return http.get<StaffAccount[]>("/api/admin/accounts", { params: { role } });
@@ -163,4 +175,13 @@ export function importStaffAccounts(formData: FormData) {
   return http.post<AccountImportResult>('/api/admin/accounts/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   });
+}
+
+export function fetchActionLogs(params?: {
+  user_phone?: string;
+  role?: string;
+  path_prefix?: string;
+  limit?: number;
+}) {
+  return http.get<UserActionLogItem[]>('/api/admin/logs', { params });
 }

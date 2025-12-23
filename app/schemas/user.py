@@ -44,3 +44,17 @@ class Token(SQLModel):
 class ChangePassword(SQLModel):
     current_password: str
     new_password: str
+
+
+class UserActionLogRead(SQLModel):
+    log_id: int
+    user_phone: str
+    role: str
+    method: str
+    path: str
+    action: str
+    status_code: int
+    ip_address: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

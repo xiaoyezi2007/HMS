@@ -4,6 +4,7 @@ from typing import Optional, List
 from enum import Enum
 import random
 from datetime import datetime as _datetime
+from app.core.time_utils import now_bj, today_bj
 
 
 # --- 枚举类型 ---
@@ -65,8 +66,8 @@ class Patient(SQLModel, table=True):
 # --- 4. 挂号表 (Registration) ---
 class Registration(SQLModel, table=True):
     reg_id: Optional[int] = Field(default=None, primary_key=True)
-    reg_date: datetime = Field(default_factory=datetime.now)
-    visit_date: date = Field(default_factory=date.today, description="就诊日期（具体到日）")
+    reg_date: datetime = Field(default_factory=now_bj)
+    visit_date: date = Field(default_factory=today_bj, description="就诊日期（具体到日）")
     reg_type: RegType = Field(default=RegType.NORMAL)
     fee: float = Field(default=0.0)
     status: RegStatus = Field(default=RegStatus.WAITING)
@@ -79,7 +80,7 @@ class Registration(SQLModel, table=True):
 # --- 5. 病历表 (MedicalRecord) ---
 class MedicalRecord(SQLModel, table=True):
     record_id: Optional[int] = Field(default=None, primary_key=True)
-    create_time: datetime = Field(default_factory=datetime.now)
+    create_time: datetime = Field(default_factory=now_bj)
 
     # 核心字段 (PDF 1.4.6)
     complaint: str = Field(description="主诉")
@@ -148,7 +149,7 @@ class Medicine(SQLModel, table=True):
 class Prescription(SQLModel, table=True):
     pres_id: Optional[int] = Field(default=None, primary_key=True)
     record_id: int = Field(foreign_key="medicalrecord.record_id", unique=True)
-    create_time: datetime = Field(default_factory=datetime.now)
+    create_time: datetime = Field(default_factory=now_bj)
     total_amount: float = Field(default=0.0)
     details: List["PrescriptionDetail"] = Relationship(back_populates="prescription")
 
@@ -175,7 +176,7 @@ class Examination(SQLModel, table=True):
     exam_id: Optional[int] = Field(default=None, primary_key=True)
     type: str = Field(max_length=100, description="检查类型，由医生填写")
     result: str = Field(default=None, max_length=10, description="检查结果：极低/偏低/正常/偏高/极高")
-    date: _datetime = Field(default_factory=_datetime.now)
+    date: _datetime = Field(default_factory=now_bj)
 
     # 外键：关联病历（n:1）
     record_id: int = Field(foreign_key="medicalrecord.record_id")
@@ -195,7 +196,7 @@ class Payment(SQLModel, table=True):
     type: PaymentType
     amount: float = Field(default=0.0, ge=0)
     status: str = Field(default="未缴费")
-    time: _datetime = Field(default_factory=_datetime.now)
+    time: _datetime = Field(default_factory=now_bj)
 
     # 关联外键（可选）
     patient_id: int = Field(foreign_key="patient.patient_id")
@@ -209,7 +210,7 @@ class Payment(SQLModel, table=True):
 class Hospitalization(SQLModel, table=True):
     hosp_id: Optional[int] = Field(default=None, primary_key=True)
     status: str = Field(default="在院")
-    in_date: datetime = Field(default_factory=datetime.now)
+    in_date: datetime = Field(default_factory=now_bj)
     out_date: Optional[datetime] = Field(default=None)
 
     hosp_doctor_id: Optional[int] = Field(default=None, foreign_key="doctor.doctor_id")

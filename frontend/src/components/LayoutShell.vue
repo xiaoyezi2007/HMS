@@ -106,6 +106,7 @@ const menuConfig: MenuItem[] = [
   { path: "/workspace/admin/staff", label: "医护管理", roles: ["管理员"], icon: Management },
   { path: "/workspace/admin/dept", label: "科室管理", roles: ["管理员"], icon: Document },
   { path: "/workspace/admin/revenue", label: "营收记录", roles: ["管理员"], icon: Coin },
+  { path: "/workspace/admin/logs", label: "操作日志", roles: ["管理员"], icon: List },
   { path: "/workspace/admin/profile", label: "个人主页", roles: ["管理员"], icon: User }
 ];
 

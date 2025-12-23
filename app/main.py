@@ -1,15 +1,17 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from contextlib import asynccontextmanager
 from sqlmodel import select
 from sqlalchemy import text
 from app.core.config import init_db, async_session
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, SECRET_KEY, ALGORITHM
+from jose import jwt, JWTError
+from app.core.time_utils import now_bj
 
 # 导入所有模块
 from app.api import auth, patient_service, doctor_service, nurse_service, pharmacy_service, admin_service
 
 # 导入模型
-from app.models.user import UserAccount, UserRole
+from app.models.user import UserAccount, UserRole, UserActionLog
 from app.models.hospital import Department, Doctor, Gender, Medicine, Nurse, Ward, NurseSchedule
 from datetime import datetime
 
@@ -114,6 +116,48 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="医院管理系统 API", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def audit_log_middleware(request: Request, call_next):
+    response = await call_next(request)
+
+    path = request.url.path
+    skip_prefixes = ("/docs", "/openapi.json", "/redoc", "/static")
+    if path == "/" or any(path.startswith(prefix) for prefix in skip_prefixes):
+        return response
+
+    auth_header = request.headers.get("Authorization", "")
+    user_phone = None
+    role = None
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1]
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            user_phone = payload.get("sub")
+            role = payload.get("role")
+        except JWTError:
+            pass
+
+    if user_phone:
+        try:
+            async with async_session() as session:
+                log = UserActionLog(
+                    user_phone=user_phone,
+                    role=str(role or ""),
+                    method=request.method,
+                    path=path,
+                    action=f"{request.method} {path}",
+                    status_code=response.status_code,
+                    ip_address=request.client.host if request.client else "unknown",
+                    created_at=now_bj(),
+                )
+                session.add(log)
+                await session.commit()
+        except Exception as exc:  # noqa: W0703
+            print(f"WARN: failed to record user action log: {exc}")
+
+    return response
 
 app.include_router(auth.router, prefix="/auth", tags=["认证模块"])
 app.include_router(patient_service.router, prefix="/api", tags=["患者服务"])

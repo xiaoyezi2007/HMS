@@ -10,6 +10,7 @@ import NurseDashboard from "../views/dashboard/NurseDashboard.vue";
 import PharmacyDashboard from "../views/dashboard/PharmacyDashboard.vue";
 import AdminDashboard from "../views/dashboard/AdminDashboard.vue";
 import AdminRevenue from "../views/dashboard/AdminRevenue.vue";
+import AdminLogs from "../views/dashboard/AdminLogs.vue";
 import StaffProfile from "../views/staff/StaffProfile.vue";
 import PatientHome from "../views/patient/PatientHome.vue";
 import PatientProfile from "../views/patient/PatientProfile.vue";
@@ -168,6 +169,12 @@ const router = createRouter({
           path: "workspace/admin/revenue",
           name: "admin-revenue",
           component: AdminRevenue,
+          meta: { roles: ["管理员"] }
+        },
+        {
+          path: "workspace/admin/logs",
+          name: "admin-logs",
+          component: AdminLogs,
           meta: { roles: ["管理员"] }
         },
         {

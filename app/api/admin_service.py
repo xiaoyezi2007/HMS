@@ -15,9 +15,9 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from app.api.deps import get_current_admin_user
 from app.core.config import get_session
 from app.core.security import get_password_hash
-from app.models.user import UserAccount, UserRole
+from app.models.user import UserAccount, UserRole, UserActionLog
 from app.models.hospital import Doctor, Nurse, Department, Ward, Gender, Payment, Patient
-from app.schemas.user import StaffAccountCreate, UserAccountSafe
+from app.schemas.user import StaffAccountCreate, UserAccountSafe, UserActionLogRead
 from app.schemas.hospital import (
     DoctorTitleUpdate,
     NurseHeadUpdate,
@@ -540,6 +540,30 @@ async def import_staff_accounts(
         "success_items": success_items,
         "errors": errors
     }
+
+
+@router.get("/admin/logs", response_model=List[UserActionLogRead])
+async def list_action_logs(
+    user_phone: Optional[str] = None,
+    role: Optional[UserRole] = None,
+    path_prefix: Optional[str] = None,
+    limit: int = 200,
+    _: UserAccount = Depends(get_current_admin_user),
+    session: AsyncSession = Depends(get_session),
+):
+    max_limit = 500
+    take = limit if 0 < limit <= max_limit else max_limit
+
+    stmt = select(UserActionLog).order_by(UserActionLog.created_at.desc()).limit(take)
+    if user_phone:
+        stmt = stmt.where(UserActionLog.user_phone == user_phone)
+    if role:
+        stmt = stmt.where(UserActionLog.role == role.value)
+    if path_prefix:
+        stmt = stmt.where(UserActionLog.path.like(f"{path_prefix}%"))
+
+    result = await session.execute(stmt)
+    return result.scalars().all()
 
 
 @router.get("/admin/doctors")

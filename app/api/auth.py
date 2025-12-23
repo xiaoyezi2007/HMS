@@ -8,7 +8,8 @@ from sqlmodel import select
 
 from app.core.config import get_session
 from app.core.security import get_password_hash, verify_password, create_access_token
-from app.models.user import UserAccount, RegistrationAttempt
+from app.models.user import UserAccount, RegistrationAttempt, UserActionLog
+from app.core.time_utils import now_bj
 from app.schemas.user import UserCreate, Token, UserAccountSafe
 from app.schemas.user import ChangePassword
 from app.api.deps import get_current_user
@@ -62,7 +63,7 @@ async def register(
     )
 
     session.add(new_user)
-    session.add(RegistrationAttempt(ip_address=ip_address, created_at=datetime.utcnow()))
+    session.add(RegistrationAttempt(ip_address=ip_address, created_at=now_bj()))
     await session.commit()
     await session.refresh(new_user)
     return new_user
@@ -72,7 +73,11 @@ async def register(
 # OAuth2PasswordRequestForm 是 FastAPI 自带的表单处理，它要求前端传 'username' 和 'password'
 # 注意：虽然字段名是 username，但我们逻辑里用 phone 来匹配
 @router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: AsyncSession = Depends(get_session)):
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    session: AsyncSession = Depends(get_session),
+    request: Request = None,
+):
     # A. 根据手机号查询用户 (form_data.username 对应前端传来的手机号)
     result = await session.execute(select(UserAccount).where(UserAccount.phone == form_data.username))
     user = result.scalars().first()
@@ -94,6 +99,24 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Async
 
     # C. 生成 Token
     access_token = create_access_token(data={"sub": user.phone, "role": user.role.value})
+
+    try:
+        ip_address = _extract_client_ip(request) if request else "unknown"
+        log = UserActionLog(
+            user_phone=user.phone,
+            role=user.role.value,
+            method="POST",
+            path="/auth/login",
+            action="用户登录",
+            status_code=status.HTTP_200_OK,
+            ip_address=ip_address,
+            created_at=now_bj(),
+        )
+        session.add(log)
+        await session.commit()
+    except Exception:
+        # 登录日志是辅助功能，不影响主流程
+        await session.rollback()
 
     return {"access_token": access_token, "token_type": "bearer"}
 
