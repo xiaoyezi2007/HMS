@@ -53,18 +53,6 @@ async def init_data():
             await session.commit()
             d1 = (await session.execute(select(Department))).scalars().first()
 
-        # 2. 药品
-        if not (await session.execute(select(Medicine))).scalars().first():
-            session.add(Medicine(name="布洛芬", price=30.0, stock=100, unit="盒"))
-            await session.commit()
-
-        # 3. 护士与病房
-        if not (await session.execute(select(Nurse))).scalars().first():
-            d1 = (await session.execute(select(Department))).scalars().first()
-            if d1:
-                w1 = Ward(bed_count=4, type="普通房", dept_id=d1.dept_id)
-                session.add(w1)
-                await session.flush()
 
 
 async def init_triggers():
