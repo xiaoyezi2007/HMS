@@ -446,7 +446,6 @@ async def get_registration_detail_for_doctor(
                 "pres_id": pres.pres_id,
                 "create_time": pres.create_time,
                 "total_amount": pres.total_amount,
-                "status": pres.status,
                 "details": enriched,
             })
 

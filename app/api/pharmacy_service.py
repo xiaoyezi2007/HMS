@@ -325,4 +325,4 @@ async def get_prescription_by_record(
             "usage": d.usage
         })
 
-    return {"pres_id": pres.pres_id, "record_id": pres.record_id, "total_amount": pres.total_amount, "status": pres.status, "details": out_details}
+    return {"pres_id": pres.pres_id, "record_id": pres.record_id, "total_amount": pres.total_amount, "details": out_details}

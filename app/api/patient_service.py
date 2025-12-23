@@ -631,13 +631,6 @@ async def pay_payment(
     payment.status = '已缴费'
     session.add(payment)
 
-    # 若这是处方缴费，则同步更新处方状态
-    if payment.pres_id:
-        pres = await session.get(Prescription, payment.pres_id)
-        if pres:
-            pres.status = '已缴费'
-            session.add(pres)
-
     await session.commit()
     await session.refresh(payment)
     return {"message": "已缴费", "payment": {

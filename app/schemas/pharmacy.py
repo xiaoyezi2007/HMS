@@ -16,7 +16,6 @@ class PrescriptionRead(SQLModel):
     pres_id: int
     record_id: int
     total_amount: float
-    status: str
     create_time: datetime
 
 
