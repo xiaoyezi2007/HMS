@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -37,6 +38,7 @@ from app.models.hospital import (
 from app.schemas.hospital import MedicalRecordCreate
 from app.schemas.hospital import ExaminationCreate, NurseTaskBatchCreate, NurseTaskPlan
 import random
+from app.services.exam_price_catalog import exam_price_catalog
 
 router = APIRouter()
 
@@ -129,6 +131,74 @@ def estimate_service_fee(task_type: str) -> Optional[float]:
     if not fee_range:
         return None
     return round(random.uniform(*fee_range), 2)
+
+
+EXAM_PRICE_FALLBACK = float(os.getenv("EXAM_PRICE_FALLBACK", "120"))
+
+
+async def _ensure_prescription_payments(
+    session: AsyncSession,
+    registration: Registration,
+    record: MedicalRecord,
+) -> None:
+    pres_stmt = select(Prescription).where(Prescription.record_id == record.record_id)
+    prescriptions = (await session.execute(pres_stmt)).scalars().all()
+    if not prescriptions:
+        return
+
+    for pres in prescriptions:
+        amount = float(pres.total_amount or 0.0)
+        pay_stmt = select(Payment).where(Payment.pres_id == pres.pres_id)
+        existing = (await session.execute(pay_stmt)).scalars().first()
+        if existing:
+            existing.type = PaymentType.PRESCRIPTION
+            existing.patient_id = registration.patient_id
+            existing.reg_id = registration.reg_id
+            if getattr(existing, "status", "未缴费") != "已缴费":
+                existing.amount = amount
+            session.add(existing)
+        else:
+            session.add(Payment(
+                type=PaymentType.PRESCRIPTION,
+                amount=amount,
+                patient_id=registration.patient_id,
+                reg_id=registration.reg_id,
+                pres_id=pres.pres_id,
+                status="未缴费",
+            ))
+
+
+async def _ensure_exam_payments(
+    session: AsyncSession,
+    registration: Registration,
+    record: MedicalRecord,
+) -> None:
+    exam_stmt = select(Examination).where(Examination.record_id == record.record_id)
+    exams = (await session.execute(exam_stmt)).scalars().all()
+    if not exams:
+        return
+
+    for exam in exams:
+        price_match = await exam_price_catalog.lookup_price(exam.type)
+        amount = price_match.price if price_match else EXAM_PRICE_FALLBACK
+        pay_stmt = select(Payment).where(Payment.exam_id == exam.exam_id)
+        existing = (await session.execute(pay_stmt)).scalars().first()
+        if existing:
+            existing.type = PaymentType.EXAM
+            existing.patient_id = registration.patient_id
+            existing.reg_id = registration.reg_id
+            if getattr(existing, "status", "未缴费") != "已缴费":
+                existing.amount = amount
+            session.add(existing)
+        else:
+            session.add(Payment(
+                type=PaymentType.EXAM,
+                amount=amount,
+                patient_id=registration.patient_id,
+                reg_id=registration.reg_id,
+                exam_id=exam.exam_id,
+                status="未缴费",
+            ))
 
 
 # --- 接口 1: 医生排班 ---
@@ -793,7 +863,13 @@ async def finish_handling(
 
     registration.status = RegStatus.FINISHED
     session.add(registration)
+
+    record_stmt = select(MedicalRecord).where(MedicalRecord.reg_id == reg_id)
+    record = (await session.execute(record_stmt)).scalars().first()
+    if record:
+        await _ensure_prescription_payments(session, registration, record)
+        await _ensure_exam_payments(session, registration, record)
+
     await session.commit()
     await session.refresh(registration)
-
     return registration

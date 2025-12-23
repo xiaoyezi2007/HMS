@@ -68,40 +68,13 @@ async def init_data():
 
 
 async def init_triggers():
-    """Create or replace database triggers needed by the app."""
-    trigger_sql = """
-    CREATE TRIGGER trg_registration_completed
-    AFTER UPDATE ON registration
-    FOR EACH ROW
-    BEGIN
-        IF OLD.status <> 'FINISHED' AND NEW.status = 'FINISHED' THEN
-            INSERT INTO payment(type, amount, patient_id, reg_id, pres_id, time)
-            SELECT 'PRESCRIPTION', pres.total_amount, NEW.patient_id, NEW.reg_id, pres.pres_id, NOW()
-            FROM prescription pres
-            JOIN medicalrecord mr ON mr.record_id = pres.record_id
-            WHERE mr.reg_id = NEW.reg_id;
-
-            INSERT INTO payment(type, amount, patient_id, reg_id, exam_id, time)
-            SELECT 'EXAM', FLOOR(RAND() * 151) + 50, NEW.patient_id, NEW.reg_id, exam.exam_id, NOW()
-            FROM examination exam
-            JOIN medicalrecord mr ON mr.record_id = exam.record_id
-            WHERE mr.reg_id = NEW.reg_id;
-        END IF;
-    END;
-    """
-
+    """Remove legacy trigger that injected random exam fees."""
     async with async_session() as session:
         conn = await session.connection()
-        # Drop then create to ensure latest definition is in place
         try:
             await conn.execute(text("DROP TRIGGER IF EXISTS trg_registration_completed"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text(trigger_sql))
-        except Exception as exc:
-            # Keep startup running even if trigger creation fails
-            print(f"WARN: failed to create trigger trg_registration_completed: {exc}")
+        except Exception as exc:  # noqa: W0703
+            print(f"WARN: failed to drop trigger trg_registration_completed: {exc}")
 
 
 

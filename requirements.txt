@@ -8,3 +8,5 @@ python-jose[cryptography]
 python-multipart
 openpyxl
 python-docx
+httpx
+xlrd==1.2.0
