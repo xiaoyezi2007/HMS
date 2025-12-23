@@ -209,37 +209,44 @@
       :title="trendMedicine ? `${trendMedicine.name} · 用量趋势` : '用量趋势'"
       width="720px"
     >
-      <div v-if="displayTrendData.length" class="trend-chart">
+      <div v-if="displayTrendData.length" ref="trendChartRef" class="trend-chart">
         <div class="trend-chart__toolbar">
           <span class="trend-chart__title">{{ trendMode === 'monthly' ? '近12个月用量' : '近30天用量' }}</span>
-          <el-button-group size="small">
-            <el-button :type="trendMode === 'daily' ? 'primary' : 'default'" @click="trendMode = 'daily'">近30天</el-button>
-            <el-button :type="trendMode === 'monthly' ? 'primary' : 'default'" @click="trendMode = 'monthly'">近12个月</el-button>
-          </el-button-group>
-        </div>
-        <div class="trend-chart__grid">
-          <div class="trend-chart__bars" :style="{ gridTemplateColumns: getGridColumns() }">
-            <div
-              v-for="point in displayTrendData"
-              :key="point.date"
-              class="trend-bar"
-              :style="{ height: getBarHeight(point.quantity) }"
-            >
-              <span class="trend-bar__value">{{ point.quantity }}</span>
+          <div class="trend-chart__actions">
+            <el-button-group size="small">
+              <el-button :type="trendMode === 'daily' ? 'primary' : 'default'" @click="trendMode = 'daily'">近30天</el-button>
+              <el-button :type="trendMode === 'monthly' ? 'primary' : 'default'" @click="trendMode = 'monthly'">近12个月</el-button>
+            </el-button-group>
+            <div class="trend-chart__export">
+              <el-button size="small" type="success" plain @click="exportTrendPdf">导出 PDF</el-button>
             </div>
           </div>
-          <div
-            v-if="trendStats.avg"
-            class="trend-chart__avg-line"
-            :style="{ bottom: getAverageLinePosition() }"
-          >
-            平均 {{ trendStats.avg.toFixed(1) }}
-          </div>
         </div>
-        <div class="trend-chart__axis">
-          <span>{{ displayTrendData[0].date }}</span>
-          <span>最大 {{ trendStats.max }}</span>
-          <span>{{ displayTrendData[displayTrendData.length - 1].date }}</span>
+        <div class="trend-chart__body" ref="trendChartContentRef">
+          <div class="trend-chart__grid">
+            <div class="trend-chart__bars" :style="{ gridTemplateColumns: getGridColumns() }">
+              <div
+                v-for="point in displayTrendData"
+                :key="point.date"
+                class="trend-bar"
+                :style="{ height: getBarHeight(point.quantity) }"
+              >
+                <span class="trend-bar__value">{{ point.quantity }}</span>
+              </div>
+            </div>
+            <div
+              v-if="trendStats.avg"
+              class="trend-chart__avg-line"
+              :style="{ bottom: getAverageLinePosition() }"
+            >
+              平均 {{ trendStats.avg.toFixed(1) }}
+            </div>
+          </div>
+          <div class="trend-chart__axis">
+            <span>{{ displayTrendData[0].date }}</span>
+            <span>最大 {{ trendStats.max }}</span>
+            <span>{{ displayTrendData[displayTrendData.length - 1].date }}</span>
+          </div>
         </div>
       </div>
       <div v-else class="trend-chart__empty">暂无 {{ trendMode === 'monthly' ? '12个月' : '30天' }} 用量数据</div>
@@ -253,6 +260,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import dayjs from "dayjs";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { fetchMedicines, purchaseMedicine, createMedicine, replenishMedicines, type MedicineItem, type UsagePoint } from "../../api/modules/pharmacy";
 
 const medicines = ref<MedicineItem[]>([]);
@@ -277,6 +287,8 @@ const trendMedicine = ref<MedicineItem | null>(null);
 const trendDailyData = ref<UsagePoint[]>([]);
 const trendMonthlyData = ref<UsagePoint[]>([]);
 const trendMode = ref<"daily" | "monthly">("daily");
+const trendChartRef = ref<HTMLElement | null>(null);
+const trendChartContentRef = ref<HTMLElement | null>(null);
 
 const lowStockList = computed(() =>
   medicines.value.filter((med) => med.needs_restock || med.stock < lowStockThreshold)
@@ -410,6 +422,42 @@ function getGridColumns() {
   return `repeat(${count}, minmax(6px, 1fr))`;
 }
 
+async function captureChartCanvas() {
+  if (!trendChartContentRef.value || !displayTrendData.value.length) {
+    ElMessage.warning("暂无可导出的图表");
+    return null;
+  }
+  return html2canvas(trendChartContentRef.value, { backgroundColor: "#ffffff", scale: 2 });
+}
+
+async function exportTrendPdf() {
+  const canvas = await captureChartCanvas();
+  if (!canvas) return;
+
+  const imgData = canvas.toDataURL("image/png");
+  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 10;
+  const availableWidth = pageWidth - margin * 2;
+  const availableHeight = pageHeight - margin * 2;
+  const pxToMm = 25.4 / 96; // assuming 96 dpi
+  const imgWidthMm = canvas.width * pxToMm;
+  const imgHeightMm = canvas.height * pxToMm;
+  const scale = Math.min(availableWidth / imgWidthMm, availableHeight / imgHeightMm, 1);
+  const renderWidth = imgWidthMm * scale;
+  const renderHeight = imgHeightMm * scale;
+  const offsetX = (pageWidth - renderWidth) / 2;
+  const offsetY = (pageHeight - renderHeight) / 2;
+
+  pdf.addImage(imgData, "PNG", offsetX, offsetY, renderWidth, renderHeight, undefined, "FAST");
+
+  const name = trendMedicine.value?.name ? trendMedicine.value.name.replace(/\s+/g, "-") : "medicine";
+  const mode = trendMode.value === "monthly" ? "12m" : "30d";
+  const filename = `medicine-usage-${name}-${mode}-${dayjs().format("YYYYMMDD-HHmmss")}.pdf`;
+  pdf.save(filename);
+}
+
 onMounted(loadMedicines);
 </script>
 
@@ -497,6 +545,23 @@ onMounted(loadMedicines);
 .trend-chart__title {
   color: #606266;
   font-size: 13px;
+}
+
+.trend-chart__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.trend-chart__export {
+  display: flex;
+  gap: 6px;
+}
+
+.trend-chart__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .trend-chart__grid {
