@@ -151,6 +151,7 @@ class Prescription(SQLModel, table=True):
     pres_id: Optional[int] = Field(default=None, primary_key=True)
     record_id: int = Field(foreign_key="medicalrecord.record_id", unique=True)
     create_time: datetime = Field(default_factory=now_bj)
+    status: str = Field(default="已开立", max_length=50)
     total_amount: float = Field(default=0.0)
     details: List["PrescriptionDetail"] = Relationship(back_populates="prescription")
 
