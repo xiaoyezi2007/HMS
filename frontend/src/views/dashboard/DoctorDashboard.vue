@@ -10,7 +10,7 @@
         <el-table-column label="患者" min-width="150" align="center">
           <template #default="scope">
             <el-button type="text" @click.stop="openPatientDialog(scope.row.patient_id)">
-              {{ patientNames[scope.row.patient_id] || `患者 ${scope.row.patient_id}` }}
+              {{ patientNames[scope.row.patient_id] ? `患者：${patientNames[scope.row.patient_id]}` : "患者信息加载中" }}
             </el-button>
           </template>
         </el-table-column>
