@@ -454,7 +454,7 @@ async function exportTrendPdf() {
 
   const name = trendMedicine.value?.name ? trendMedicine.value.name.replace(/\s+/g, "-") : "medicine";
   const mode = trendMode.value === "monthly" ? "12m" : "30d";
-  const filename = `medicine-usage-${name}-${mode}-${dayjs().format("YYYYMMDD-HHmmss")}.pdf`;
+  const filename = `${name}-${mode}用量分析-${dayjs().format("YYYYMMDD-HHmmss")}.pdf`;
   pdf.save(filename);
 }
 
