@@ -15,7 +15,7 @@
           :closable="false"
         >
           <template #description>
-            <el-table :data="lowStockList" size="mini" stripe>
+            <el-table :data="lowStockPageData" size="mini" stripe>
               <el-table-column prop="name" label="药品" min-width="140" />
               <el-table-column prop="unit" label="单位" width="80" />
               <el-table-column prop="stock" label="库存" width="90">
@@ -43,7 +43,7 @@
           </template>
         </el-alert>
         <div class="warning-table-wrapper">
-          <el-table :data="lowStockList" size="small" border>
+          <el-table :data="lowStockPageData" size="small" border>
             <el-table-column prop="name" label="药品" min-width="160" />
             <el-table-column prop="unit" label="单位" width="90" />
             <el-table-column prop="stock" label="库存" width="110">
@@ -68,6 +68,15 @@
               </template>
             </el-table-column>
           </el-table>
+          <div class="table-pagination" v-if="lowStockList.length > pageSize">
+            <el-pagination
+              v-model:current-page="lowStockPage"
+              :page-size="pageSize"
+              layout="prev, pager, next"
+              :total="lowStockList.length"
+              small
+            />
+          </div>
         </div>
       </div>
       <div v-else>
@@ -129,7 +138,7 @@
         <el-row :gutter="16" align="middle" class="form-actions-row">
           <el-col :xs="24" :sm="12" :md="6">
             <el-form-item label="药品">
-              <el-select v-model="purchaseForm.medicine_id" placeholder="请选择药品">
+              <el-select v-model="purchaseForm.medicine_id" placeholder="请选择药品" filterable>
                 <el-option
                   v-for="med in medicines"
                   :key="med.medicine_id"
@@ -144,7 +153,7 @@
               <el-input-number v-model="purchaseForm.quantity" :min="1" :precision="0" />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="24" :md="6" :offset="6" class="form-actions">
+          <el-col :xs="24" :sm="24" :md="6" class="form-actions">
             <el-button type="primary" :loading="purchaseLoading" @click="submitPurchase">立即采购</el-button>
           </el-col>
         </el-row>
@@ -158,19 +167,28 @@
             <span>药品库存</span>
             <small>结合近 {{ usageWindowDays }} 天用量给出 {{ planningHorizonDays }} 天补货建议</small>
           </div>
-          <el-button
-            type="warning"
-            plain
-            :loading="restockLoading"
-            :disabled="!needsRestockCount"
-            @click="handleReplenish"
-          >
-            一键补足{{ planningHorizonDays }}天库存
-            <span v-if="needsRestockCount"> ({{ needsRestockCount }})</span>
-          </el-button>
+          <div class="inventory-actions">
+            <el-input
+              v-model="inventorySearch"
+              clearable
+              prefix-icon="Search"
+              placeholder="搜索库存药品"
+              class="inventory-search"
+            />
+            <el-button
+              type="warning"
+              plain
+              :loading="restockLoading"
+              :disabled="!needsRestockCount"
+              @click="handleReplenish"
+            >
+              一键补足{{ planningHorizonDays }}天库存
+              <span v-if="needsRestockCount"> ({{ needsRestockCount }})</span>
+            </el-button>
+          </div>
         </div>
       </template>
-      <el-table :data="medicines" border>
+      <el-table :data="inventoryPageData" border>
         <el-table-column prop="name" label="名称" min-width="160" />
         <el-table-column prop="unit" label="单位" width="90" />
         <el-table-column prop="price" label="单价" width="110">
@@ -201,7 +219,29 @@
             <span v-else>--</span>
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="140">
+          <template #default="{ row }">
+            <el-button
+              type="primary"
+              link
+              :disabled="!row.suggested_restock"
+              :loading="restockOneLoading === row.medicine_id"
+              @click="handleReplenishOne(row)"
+            >
+              补足7天
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
+      <div class="table-pagination" v-if="filteredMedicines.length > pageSize">
+        <el-pagination
+          v-model:current-page="inventoryPage"
+          :page-size="pageSize"
+          layout="prev, pager, next"
+          :total="filteredMedicines.length"
+          small
+        />
+      </div>
     </el-card>
 
     <el-dialog
@@ -258,7 +298,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import dayjs from "dayjs";
 import html2canvas from "html2canvas";
@@ -266,6 +306,11 @@ import { jsPDF } from "jspdf";
 import { fetchMedicines, purchaseMedicine, createMedicine, replenishMedicines, type MedicineItem, type UsagePoint } from "../../api/modules/pharmacy";
 
 const medicines = ref<MedicineItem[]>([]);
+const inventorySearch = ref("");
+const pageSize = 10;
+const inventoryPage = ref(1);
+const lowStockPage = ref(1);
+const restockOneLoading = ref<number | null>(null);
 const purchaseForm = reactive({
   medicine_id: undefined as number | undefined,
   quantity: 1
@@ -290,11 +335,31 @@ const trendMode = ref<"daily" | "monthly">("daily");
 const trendChartRef = ref<HTMLElement | null>(null);
 const trendChartContentRef = ref<HTMLElement | null>(null);
 
+const filteredMedicines = computed(() => {
+  const term = inventorySearch.value.trim().toLowerCase();
+  if (!term) return medicines.value;
+  return medicines.value.filter((med) => med.name.toLowerCase().includes(term));
+});
+
 const lowStockList = computed(() =>
   medicines.value.filter((med) => med.needs_restock || med.stock < lowStockThreshold)
 );
 const needsRestockCount = computed(() => medicines.value.filter((med) => med.suggested_restock > 0).length);
 const displayTrendData = computed(() => (trendMode.value === "monthly" ? trendMonthlyData.value : trendDailyData.value));
+
+const inventoryPageData = computed(() => {
+  const start = (inventoryPage.value - 1) * pageSize;
+  return filteredMedicines.value.slice(start, start + pageSize);
+});
+
+const lowStockPageData = computed(() => {
+  const start = (lowStockPage.value - 1) * pageSize;
+  return lowStockList.value.slice(start, start + pageSize);
+});
+
+watch(inventorySearch, () => {
+  inventoryPage.value = 1;
+});
 
 const trendStats = computed(() => {
   if (!displayTrendData.value.length) {
@@ -310,6 +375,8 @@ async function loadMedicines() {
   try {
     const { data } = await fetchMedicines();
     medicines.value = data;
+    inventoryPage.value = 1;
+    lowStockPage.value = 1;
   } catch (error: any) {
     console.error("loadMedicines error", error);
     ElMessage.error(error.response?.data?.detail ?? "获取药品列表失败");
@@ -393,6 +460,27 @@ async function handleReplenish() {
     ElMessage.error(error.response?.data?.detail ?? "补足库存失败");
   } finally {
     restockLoading.value = false;
+  }
+}
+
+async function handleReplenishOne(medicine: MedicineItem) {
+  if (!medicine.suggested_restock) {
+    ElMessage.info("该药品库存已满足建议");
+    return;
+  }
+  restockOneLoading.value = medicine.medicine_id;
+  try {
+    await purchaseMedicine({
+      medicine_id: medicine.medicine_id,
+      quantity: medicine.suggested_restock
+    });
+    ElMessage.success(`已补足 ${medicine.name}`);
+    await loadMedicines();
+  } catch (error: any) {
+    console.error("replenish one error", error);
+    ElMessage.error(error.response?.data?.detail ?? "补足库存失败");
+  } finally {
+    restockOneLoading.value = null;
   }
 }
 
@@ -497,6 +585,22 @@ onMounted(loadMedicines);
 
 .warning-table-wrapper {
   margin-top: 12px;
+}
+
+.inventory-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.inventory-search {
+  width: 220px;
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
 }
 
 .form-actions {

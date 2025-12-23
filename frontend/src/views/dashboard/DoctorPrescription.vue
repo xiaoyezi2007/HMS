@@ -29,7 +29,13 @@
                   <div v-if="medLoading" style="text-align:center; padding:20px"><el-spin /></div>
                   <div v-else-if="!filteredMedicines.length" style="text-align:center; padding:20px">暂无药品数据</div>
                   <div v-else>
-                    <el-table :data="filteredMedicines" style="width:100%" stripe @selection-change="onSelectionChange">
+                    <el-table
+                      :data="filteredMedicines"
+                      style="width:100%"
+                      stripe
+                      height="420"
+                      @selection-change="onSelectionChange"
+                    >
                       <el-table-column type="selection" width="55" />
                       <el-table-column prop="name" label="名称" />
                       <el-table-column prop="price" label="价格(¥)" width="120" />
@@ -308,4 +314,26 @@ onActivated(async () => {
 
 <style scoped>
 .mt-3 { margin-top: 16px; }
+
+.custom-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 16px;
+  overflow: auto;
+}
+
+.custom-modal {
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px 20px 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  width: min(1100px, 100%);
+  max-height: 80vh;
+  overflow: auto;
+}
 </style>
