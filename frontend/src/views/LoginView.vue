@@ -24,7 +24,7 @@
               <el-input v-model="registerForm.phone" maxlength="11" placeholder="登录手机号" />
             </el-form-item>
             <el-form-item label="用户名">
-              <el-input v-model="registerForm.username" placeholder="昵称 / 工号" />
+              <el-input v-model="registerForm.username" placeholder="昵称" />
             </el-form-item>
             <el-form-item label="密码">
               <el-input v-model="registerForm.password" type="password" show-password placeholder="请设置密码" />
