@@ -201,7 +201,9 @@ async def get_my_schedules(
     )
     if not include_history:
         stmt = stmt.where(NurseSchedule.end_time >= now)
-    stmt = stmt.order_by(NurseSchedule.start_time.desc())
+        stmt = stmt.order_by(NurseSchedule.start_time.asc())
+    else:
+        stmt = stmt.order_by(NurseSchedule.start_time.desc())
 
     results = await session.execute(stmt)
 
