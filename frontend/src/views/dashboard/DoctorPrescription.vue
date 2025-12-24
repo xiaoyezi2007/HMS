@@ -30,10 +30,12 @@
                   <div v-else-if="!filteredMedicines.length" style="text-align:center; padding:20px">暂无药品数据</div>
                   <div v-else>
                     <el-table
-                      :data="filteredMedicines"
+                      ref="medTableRef"
+                      :data="paginatedMedicines"
                       style="width:100%"
                       stripe
-                      height="420"
+                      :row-key="row => row.medicine_id"
+                      :reserve-selection="true"
                       @selection-change="onSelectionChange"
                     >
                       <el-table-column type="selection" width="55" />
@@ -52,6 +54,16 @@
                         </template>
                       </el-table-column>
                     </el-table>
+                    <div style="display:flex; justify-content:flex-end; margin-top:8px">
+                      <el-pagination
+                        layout="prev, pager, next, jumper"
+                        :total="filteredMedicines.length"
+                        :page-size="pageSize"
+                        v-model:current-page="currentPage"
+                        small
+                        hide-on-single-page
+                      />
+                    </div>
                   </div>
                   <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px">
                     <el-button @click="medDialogVisible = false">取消</el-button>
@@ -111,11 +123,15 @@ const medicines = ref<any[]>([]);
 const medLoading = ref(true);
 
 const medDialogVisible = ref(false);
+const medTableRef = ref();
 const selectedRows = ref<any[]>([]);
+const selectedIds = ref<Set<number>>(new Set());
 const medSearch = ref<string>("");
 const medSettings = ref<Record<number, { quantity: number; usage: string }>>({});
 const items = ref<Array<{ medicine_id: number; name: string; quantity: number; usage: string }>>([]);
 const record = ref<any>(null);
+const currentPage = ref(1);
+const pageSize = ref(6);
 
 async function loadExistingPrescriptionForRecord(recordId: number) {
   try {
@@ -140,7 +156,7 @@ const patient = ref<any>(null);
 async function loadMedicines() {
   medLoading.value = true;
   try {
-    const { data } = await fetchMedicines();
+    const { data } = await fetchMedicines({ includeStats: false });
     medicines.value = data;
     // 初始化 medSettings，确保每行的 quantity/usage 可绑定
     const map: Record<number, { quantity: number; usage: string }> = {};
@@ -179,8 +195,17 @@ function openMedDialog() {
 }
 
 function onSelectionChange(rows: any[]) {
-  selectedRows.value = rows || [];
-  // Ensure medSettings has entries for selected medicines
+  const pageIds = new Set((rows || []).map((r: any) => r.medicine_id));
+  // 同步当前页的选择到全局选择集合
+  for (const med of paginatedMedicines.value) {
+    if (pageIds.has(med.medicine_id)) {
+      selectedIds.value.add(med.medicine_id);
+    } else {
+      selectedIds.value.delete(med.medicine_id);
+    }
+  }
+  // 更新全局已选行，确保数量/用法可编辑
+  selectedRows.value = medicines.value.filter((m: any) => selectedIds.value.has(m.medicine_id));
   for (const m of selectedRows.value) {
     if (!medSettings.value[m.medicine_id]) {
       medSettings.value[m.medicine_id] = { quantity: 1, usage: "" };
@@ -214,7 +239,9 @@ function addSelectedToItems() {
     }
   }
   // 重置并关闭对话框
+  selectedIds.value.clear();
   selectedRows.value = [];
+  medTableRef.value?.clearSelection();
   medDialogVisible.value = false;
 }
 
@@ -226,6 +253,21 @@ const filteredMedicines = computed(() => {
   if (!medSearch.value) return medicines.value;
   const s = medSearch.value.trim().toLowerCase();
   return medicines.value.filter((m: any) => (m.name || "").toLowerCase().includes(s));
+});
+
+const paginatedMedicines = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredMedicines.value.slice(start, start + pageSize.value);
+});
+
+watch(filteredMedicines, (list) => {
+  // 避免筛选后当前页超出范围
+  const maxPage = Math.max(1, Math.ceil(list.length / pageSize.value));
+  if (currentPage.value > maxPage) currentPage.value = 1;
+});
+
+watch(medSearch, () => {
+  currentPage.value = 1;
 });
 
 function removeItem(idx: number) {
